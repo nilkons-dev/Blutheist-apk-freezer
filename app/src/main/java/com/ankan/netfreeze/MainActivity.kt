@@ -1,153 +1,186 @@
 package com.ankan.netfreeze
 
 import android.app.Activity
-import android.app.AlertDialog
 import android.content.Intent
-import android.graphics.Color
-import android.graphics.Typeface
 import android.net.VpnService
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
-import android.provider.Settings
 import android.view.Gravity
-import android.widget.Button
+import android.view.View
+import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 
-class MainActivity : Activity() {
+class MainActivity : Activity(), Host {
 
     private val reqVpn = 100
     private val handler = Handler(Looper.getMainLooper())
-    private lateinit var status: TextView
-    private lateinit var toggle: Button
 
-    private val refresher = object : Runnable {
+    private lateinit var content: FrameLayout
+    private lateinit var home: HomeTab
+    private lateinit var apps: AppsTab
+    private lateinit var speed: SpeedTab
+    private lateinit var tabs: List<Tab>
+    private val navIcons = ArrayList<TabIconView>()
+    private val navLabels = ArrayList<TextView>()
+
+    private var current = -1
+    private var resumed = false
+    private var reapplyPending = false
+
+    private val reapply = Runnable {
+        reapplyPending = false
+        if (NetBlockService.running) sendStart()
+    }
+
+    private val ticker = object : Runnable {
         override fun run() {
-            refreshUi()
-            handler.postDelayed(this, 1000L)
+            home.refresh()
+            handler.postDelayed(this, 500L)
         }
     }
 
-    private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        window.statusBarColor = UI.BG
+        window.navigationBarColor = UI.SURFACE
 
-        val root = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER_HORIZONTAL
-            setBackgroundColor(Color.parseColor("#0B0F14"))
-            setPadding(dp(24), dp(48), dp(24), dp(24))
-        }
+        home = HomeTab(this, this)
+        apps = AppsTab(this, this)
+        speed = SpeedTab(this, this)
+        tabs = listOf(home, apps, speed)
 
-        val title = TextView(this).apply {
-            text = "NetFreeze"
-            textSize = 30f
-            setTextColor(Color.parseColor("#00E5FF"))
-            typeface = Typeface.MONOSPACE
-            gravity = Gravity.CENTER
-        }
-        root.addView(title)
+        val root = LinearLayout(this)
+        root.orientation = LinearLayout.VERTICAL
+        root.setBackgroundColor(UI.BG)
 
-        status = TextView(this).apply {
-            textSize = 16f
-            setTextColor(Color.WHITE)
-            gravity = Gravity.CENTER
-            setPadding(0, dp(24), 0, dp(24))
-        }
-        root.addView(status)
-
-        toggle = Button(this).apply {
-            textSize = 20f
-            setTextColor(Color.BLACK)
-            setOnClickListener { onToggle() }
-        }
-        root.addView(
-            toggle,
-            LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(90))
-        )
-
-        val allowBtn = Button(this).apply {
-            text = "Allowed apps (whitelist)"
-            setOnClickListener { showWhitelist() }
-        }
-        root.addView(
-            allowBtn,
-            LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { topMargin = dp(24) }
-        )
-
-        val batteryBtn = Button(this).apply {
-            text = "Data Saver / Data usage settings"
-            setOnClickListener {
-                try {
-                    startActivity(Intent(Settings.ACTION_DATA_USAGE_SETTINGS))
-                } catch (_: Exception) {
-                    startActivity(Intent(Settings.ACTION_SETTINGS))
-                }
-            }
-        }
-        root.addView(batteryBtn)
-
-        val note = TextView(this).apply {
-            text = "ON: every app (except whitelisted ones) loses internet and " +
-                "its background processes are stopped every minute.\n" +
-                "Your hotspot keeps working and gets the full bandwidth.\n" +
-                "OFF: everything returns to normal."
-            textSize = 13f
-            setTextColor(Color.parseColor("#8899AA"))
-            setPadding(0, dp(24), 0, 0)
-        }
-        root.addView(note)
-
+        content = FrameLayout(this)
+        root.addView(content, UI.lp(UI.MATCH, 0, 1f))
+        root.addView(buildNav(), UI.lp(UI.MATCH, UI.WRAP))
         setContentView(root)
+
+        select(0)
+        AppRepo.load(this) { home.refresh() }
+    }
+
+    private fun buildNav(): View {
+        val wrap = LinearLayout(this)
+        wrap.orientation = LinearLayout.VERTICAL
+        wrap.setBackgroundColor(UI.SURFACE)
+
+        val line = View(this)
+        line.setBackgroundColor(UI.STROKE)
+        wrap.addView(line, UI.lp(UI.MATCH, 1))
+
+        val row = LinearLayout(this)
+        row.orientation = LinearLayout.HORIZONTAL
+        val labels = arrayOf("Freeze", "Apps", "Speed")
+        for (i in labels.indices) {
+            val item = LinearLayout(this)
+            item.orientation = LinearLayout.VERTICAL
+            item.gravity = Gravity.CENTER
+            item.setPadding(0, UI.dp(this, 9), 0, UI.dp(this, 9))
+            item.isClickable = true
+            val sel = UI.selectable(this)
+            if (sel != null) item.background = sel
+            item.setOnClickListener { select(i) }
+
+            val icon = TabIconView(this, i)
+            item.addView(icon, UI.lp(UI.dp(this, 26), UI.dp(this, 26)))
+            val label = UI.text(this, labels[i], 11f, UI.MUTED, UI.medium())
+            label.gravity = Gravity.CENTER
+            item.addView(label, UI.lp(UI.WRAP, UI.WRAP, 0f, 0, UI.dp(this, 4), 0, 0))
+
+            row.addView(item, UI.lp(0, UI.WRAP, 1f))
+            navIcons.add(icon)
+            navLabels.add(label)
+        }
+        wrap.addView(row, UI.lp(UI.MATCH, UI.WRAP))
+        return wrap
+    }
+
+    private fun select(index: Int) {
+        if (index == current) return
+        if (current >= 0 && resumed) tabs[current].onHide()
+        current = index
+        content.removeAllViews()
+        content.addView(tabs[index].view, FrameLayout.LayoutParams(UI.MATCH, UI.MATCH))
+        for (k in navIcons.indices) {
+            val on = k == index
+            navIcons[k].setSelectedState(on)
+            navLabels[k].setTextColor(if (on) UI.ACCENT else UI.MUTED)
+        }
+        if (resumed) tabs[index].onShow()
     }
 
     override fun onResume() {
         super.onResume()
-        handler.post(refresher)
+        resumed = true
+        if (current >= 0) tabs[current].onShow()
+        handler.post(ticker)
     }
 
     override fun onPause() {
-        handler.removeCallbacks(refresher)
+        handler.removeCallbacks(ticker)
+        // apply a pending selection change while we are still in the foreground
+        if (reapplyPending) {
+            handler.removeCallbacks(reapply)
+            reapply.run()
+        }
+        if (current >= 0) tabs[current].onHide()
+        resumed = false
         super.onPause()
     }
 
-    private fun refreshUi() {
-        if (NetBlockService.running) {
-            status.text = "STATUS: BLOCKING ALL BACKGROUND INTERNET"
-            toggle.text = "TURN OFF"
-            toggle.setBackgroundColor(Color.parseColor("#FF5252"))
-        } else {
-            status.text = "STATUS: NORMAL (not blocking)"
-            toggle.text = "BLOCK ALL"
-            toggle.setBackgroundColor(Color.parseColor("#00E5FF"))
-        }
-    }
+    // ------------------------------------------------------------------ Host
 
-    private fun onToggle() {
+    override fun toggleFreeze() {
         if (NetBlockService.running) {
-            startService(
-                Intent(this, NetBlockService::class.java).setAction(NetBlockService.ACTION_STOP)
-            )
+            try {
+                startService(
+                    Intent(this, NetBlockService::class.java).setAction(NetBlockService.ACTION_STOP)
+                )
+            } catch (e: Exception) {
+                Toast.makeText(this, "Could not stop: " + e.message, Toast.LENGTH_LONG).show()
+            }
         } else {
-            val prepare = VpnService.prepare(this)
+            val prepare: Intent? = try {
+                VpnService.prepare(this)
+            } catch (e: Exception) {
+                null
+            }
             if (prepare != null) {
-                startActivityForResult(prepare, reqVpn)
+                try {
+                    startActivityForResult(prepare, reqVpn)
+                } catch (e: Exception) {
+                    Toast.makeText(this, "VPN is not available on this device", Toast.LENGTH_LONG).show()
+                }
             } else {
-                startBlocking()
+                sendStart()
             }
         }
+        handler.postDelayed({ home.refresh() }, 300L)
     }
 
-    private fun startBlocking() {
-        startService(
-            Intent(this, NetBlockService::class.java).setAction(NetBlockService.ACTION_START)
-        )
+    override fun exemptChanged() {
+        home.refresh()
+        if (NetBlockService.running) {
+            reapplyPending = true
+            handler.removeCallbacks(reapply)
+            handler.postDelayed(reapply, 800L)
+        }
+    }
+
+    private fun sendStart() {
+        try {
+            startService(
+                Intent(this, NetBlockService::class.java).setAction(NetBlockService.ACTION_START)
+            )
+        } catch (e: Exception) {
+            Toast.makeText(this, "Could not start: " + e.message, Toast.LENGTH_LONG).show()
+        }
     }
 
     @Deprecated("Deprecated in Java")
@@ -155,46 +188,11 @@ class MainActivity : Activity() {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == reqVpn) {
             if (resultCode == RESULT_OK) {
-                startBlocking()
+                sendStart()
+                handler.postDelayed({ home.refresh() }, 300L)
             } else {
-                Toast.makeText(this, "VPN permission is required", Toast.LENGTH_LONG).show()
+                Toast.makeText(this, "VPN permission is required to freeze apps", Toast.LENGTH_LONG).show()
             }
         }
-    }
-
-    private fun showWhitelist() {
-        val pm = packageManager
-        val query = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
-        val apps = pm.queryIntentActivities(query, 0)
-            .map { it.activityInfo.packageName to it.loadLabel(pm).toString() }
-            .distinctBy { it.first }
-            .filter { it.first != packageName }
-            .sortedBy { it.second.lowercase() }
-
-        if (apps.isEmpty()) {
-            Toast.makeText(this, "No apps found", Toast.LENGTH_SHORT).show()
-            return
-        }
-
-        val saved = Prefs.allowed(this)
-        val names = apps.map { it.second }.toTypedArray()
-        val checked = BooleanArray(apps.size) { apps[it].first in saved }
-
-        AlertDialog.Builder(this)
-            .setTitle("Apps that keep internet")
-            .setMultiChoiceItems(names, checked) { _, index, isChecked ->
-                checked[index] = isChecked
-            }
-            .setPositiveButton("Save") { _, _ ->
-                val result = HashSet<String>()
-                for (i in apps.indices) {
-                    if (checked[i]) result.add(apps[i].first)
-                }
-                Prefs.saveAllowed(this, result)
-                if (NetBlockService.running) startBlocking() // re-apply instantly
-                Toast.makeText(this, "Saved", Toast.LENGTH_SHORT).show()
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
     }
 }

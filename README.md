@@ -1,4 +1,6 @@
-# NetFreeze
-One-tap Android app: blocks internet for all other apps (local VPN, no root),
-kills their background processes every minute, supports a whitelist.
-Build: push to GitHub -> Actions -> download "NetFreeze-APK".
+# Blutheist NetFreeze
+
+One-tap Android app that freezes the background internet of other apps (local VPN, no root),
+with an app picker (icons + switches), a speed test and a live latency graph.
+
+Build: push to GitHub -> Actions -> download "Blutheist-NetFreeze-APK".

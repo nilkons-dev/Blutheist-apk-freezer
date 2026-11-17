@@ -12,5 +12,5 @@ dependencyResolutionManagement {
         mavenCentral()
     }
 }
-rootProject.name = "NetFreeze"
+rootProject.name = "BlutheistNetFreeze"
 include(":app")
