@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="bg">#060B14</color>
-    <color name="surface">#0A1220</color>
-    <color name="accent">#35D4FF</color>
+    <color name="bg">#000000</color>
+    <color name="surface">#000000</color>
+    <color name="accent">#FFFFFF</color>
 </resources>

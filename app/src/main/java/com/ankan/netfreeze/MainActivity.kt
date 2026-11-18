@@ -1,11 +1,16 @@
 package com.ankan.netfreeze
 
+import android.Manifest
 import android.app.Activity
 import android.content.Intent
+import android.graphics.Color
+import android.net.Uri
 import android.net.VpnService
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.provider.Settings
 import android.view.Gravity
 import android.view.View
 import android.widget.FrameLayout
@@ -13,20 +18,20 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 
-class MainActivity : Activity(), Host {
+class MainActivity : Activity(), Nav {
 
     private val reqVpn = 100
+    private val reqStorage = 200
     private val handler = Handler(Looper.getMainLooper())
 
-    private lateinit var content: FrameLayout
-    private lateinit var home: HomeTab
-    private lateinit var apps: AppsTab
-    private lateinit var speed: SpeedTab
-    private lateinit var tabs: List<Tab>
-    private val navIcons = ArrayList<TabIconView>()
+    private val stack = ArrayList<Screen>()
+    private lateinit var host: FrameLayout
+    private lateinit var navBar: LinearLayout
+    private lateinit var home: HomeScreen
+    private lateinit var utilities: UtilitiesScreen
+    private val navIcons = ArrayList<IconView>()
     private val navLabels = ArrayList<TextView>()
-
-    private var current = -1
+    private var tab = 0
     private var resumed = false
     private var reapplyPending = false
 
@@ -35,115 +40,180 @@ class MainActivity : Activity(), Host {
         if (NetBlockService.running) sendStart()
     }
 
-    private val ticker = object : Runnable {
-        override fun run() {
-            home.refresh()
-            handler.postDelayed(this, 500L)
-        }
-    }
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        window.statusBarColor = UI.BG
-        window.navigationBarColor = UI.SURFACE
+        window.statusBarColor = Color.BLACK
+        window.navigationBarColor = Color.BLACK
 
-        home = HomeTab(this, this)
-        apps = AppsTab(this, this)
-        speed = SpeedTab(this, this)
-        tabs = listOf(home, apps, speed)
+        val root = FrameLayout(this)
+        root.setBackgroundColor(Color.BLACK)
+        host = FrameLayout(this)
+        root.addView(host, FrameLayout.LayoutParams(UI.MATCH, UI.MATCH))
 
-        val root = LinearLayout(this)
-        root.orientation = LinearLayout.VERTICAL
-        root.setBackgroundColor(UI.BG)
+        home = HomeScreen(this, this)
+        utilities = UtilitiesScreen(this, this)
 
-        content = FrameLayout(this)
-        root.addView(content, UI.lp(UI.MATCH, 0, 1f))
-        root.addView(buildNav(), UI.lp(UI.MATCH, UI.WRAP))
+        navBar = buildNav()
+        val w = minOf(UI.dp(this, 300), resources.displayMetrics.widthPixels - UI.dp(this, 40))
+        val lp = FrameLayout.LayoutParams(w, UI.WRAP, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL)
+        lp.bottomMargin = UI.dp(this, 16)
+        root.addView(navBar, lp)
         setContentView(root)
 
-        select(0)
-        AppRepo.load(this) { home.refresh() }
+        stack.add(home)
+        render()
+        AppRepo.load(this) { }
     }
 
-    private fun buildNav(): View {
-        val wrap = LinearLayout(this)
-        wrap.orientation = LinearLayout.VERTICAL
-        wrap.setBackgroundColor(UI.SURFACE)
-
-        val line = View(this)
-        line.setBackgroundColor(UI.STROKE)
-        wrap.addView(line, UI.lp(UI.MATCH, 1))
-
-        val row = LinearLayout(this)
-        row.orientation = LinearLayout.HORIZONTAL
-        val labels = arrayOf("Freeze", "Apps", "Speed")
-        for (i in labels.indices) {
+    private fun buildNav(): LinearLayout {
+        val bar = LinearLayout(this)
+        bar.orientation = LinearLayout.HORIZONTAL
+        bar.background = UI.rounded(this, Color.parseColor("#141416"), 36f, UI.STROKE, 1f)
+        bar.setPadding(UI.dp(this, 8), UI.dp(this, 8), UI.dp(this, 8), UI.dp(this, 8))
+        val names = arrayOf("Home", "Utilities")
+        val icons = intArrayOf(Ic.SHIELD, Ic.GRID)
+        for (i in names.indices) {
             val item = LinearLayout(this)
             item.orientation = LinearLayout.VERTICAL
             item.gravity = Gravity.CENTER
-            item.setPadding(0, UI.dp(this, 9), 0, UI.dp(this, 9))
+            item.setPadding(0, UI.dp(this, 8), 0, UI.dp(this, 8))
             item.isClickable = true
-            val sel = UI.selectable(this)
-            if (sel != null) item.background = sel
-            item.setOnClickListener { select(i) }
-
-            val icon = TabIconView(this, i)
-            item.addView(icon, UI.lp(UI.dp(this, 26), UI.dp(this, 26)))
-            val label = UI.text(this, labels[i], 11f, UI.MUTED, UI.medium())
+            item.setOnClickListener { selectTab(i) }
+            val ic = IconView(this, icons[i])
+            item.addView(ic, UI.lp(UI.dp(this, 26), UI.dp(this, 26)))
+            val label = UI.text(this, names[i], 12.5f, UI.MUTED, UI.medium())
             label.gravity = Gravity.CENTER
             item.addView(label, UI.lp(UI.WRAP, UI.WRAP, 0f, 0, UI.dp(this, 4), 0, 0))
-
-            row.addView(item, UI.lp(0, UI.WRAP, 1f))
-            navIcons.add(icon)
+            bar.addView(item, UI.lp(0, UI.WRAP, 1f))
+            navIcons.add(ic)
             navLabels.add(label)
         }
-        wrap.addView(row, UI.lp(UI.MATCH, UI.WRAP))
-        return wrap
+        return bar
     }
 
-    private fun select(index: Int) {
-        if (index == current) return
-        if (current >= 0 && resumed) tabs[current].onHide()
-        current = index
-        content.removeAllViews()
-        content.addView(tabs[index].view, FrameLayout.LayoutParams(UI.MATCH, UI.MATCH))
-        for (k in navIcons.indices) {
-            val on = k == index
-            navIcons[k].setSelectedState(on)
-            navLabels[k].setTextColor(if (on) UI.ACCENT else UI.MUTED)
+    private fun top(): Screen = stack[stack.size - 1]
+
+    private fun render() {
+        val showUtil = Prefs.getBool(this, "show_utilities", true)
+        if (!showUtil && tab == 1 && stack.size == 1) {
+            tab = 0
+            stack[0] = home
         }
-        if (resumed) tabs[index].onShow()
+        val t = top()
+        host.removeAllViews()
+        host.addView(t.view, FrameLayout.LayoutParams(UI.MATCH, UI.MATCH))
+        t.view.alpha = 0f
+        t.view.animate().alpha(1f).setDuration(150).start()
+        navBar.visibility = if (stack.size == 1 && showUtil) View.VISIBLE else View.GONE
+        for (k in navIcons.indices) {
+            val on = k == tab
+            navIcons[k].tint = if (on) Color.WHITE else UI.MUTED
+            navLabels[k].setTextColor(if (on) Color.WHITE else UI.MUTED)
+        }
+        if (resumed) t.onShow()
+    }
+
+    private fun selectTab(i: Int) {
+        if (stack.size != 1 || i == tab) return
+        if (resumed) top().onHide()
+        tab = i
+        stack[0] = if (i == 0) home else utilities
+        render()
     }
 
     override fun onResume() {
         super.onResume()
         resumed = true
-        if (current >= 0) tabs[current].onShow()
-        handler.post(ticker)
+        top().onShow()
     }
 
     override fun onPause() {
-        handler.removeCallbacks(ticker)
-        // apply a pending selection change while we are still in the foreground
         if (reapplyPending) {
             handler.removeCallbacks(reapply)
             reapply.run()
         }
-        if (current >= 0) tabs[current].onHide()
+        top().onHide()
         resumed = false
         super.onPause()
     }
 
-    // ------------------------------------------------------------------ Host
+    @Deprecated("Deprecated in Java")
+    override fun onBackPressed() {
+        if (stack.size > 1) pop() else super.onBackPressed()
+    }
+
+    // ------------------------------------------------------------------ Nav
+
+    override fun push(s: Screen) {
+        if (resumed) top().onHide()
+        stack.add(s)
+        render()
+    }
+
+    override fun pop() {
+        if (stack.size > 1) {
+            if (resumed) top().onHide()
+            stack.removeAt(stack.size - 1)
+            render()
+        }
+    }
+
+    override fun toast(msg: String) {
+        Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
+    }
+
+    override fun launch(i: Intent) {
+        try {
+            startActivity(i)
+        } catch (e: Exception) {
+            toast("Not available on this phone")
+        }
+    }
+
+    override fun openUsage() {
+        try {
+            startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
+        } catch (e: Exception) {
+            toast("Open Settings > Apps > Special access > Usage access")
+        }
+    }
+
+    override fun openAllFiles() {
+        if (Build.VERSION.SDK_INT >= 30) {
+            try {
+                startActivity(
+                    Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, Uri.parse("package:$packageName"))
+                )
+            } catch (e: Exception) {
+                try {
+                    startActivity(Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION))
+                } catch (e2: Exception) {
+                    toast("Open Settings > Apps > Special access > All files access")
+                }
+            }
+        } else {
+            requestStorage()
+        }
+    }
+
+    override fun requestStorage() {
+        requestPermissions(
+            arrayOf(Manifest.permission.WRITE_EXTERNAL_STORAGE, Manifest.permission.READ_EXTERNAL_STORAGE),
+            reqStorage
+        )
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == reqStorage) top().onShow()
+    }
 
     override fun toggleFreeze() {
         if (NetBlockService.running) {
             try {
-                startService(
-                    Intent(this, NetBlockService::class.java).setAction(NetBlockService.ACTION_STOP)
-                )
+                startService(Intent(this, NetBlockService::class.java).setAction(NetBlockService.ACTION_STOP))
             } catch (e: Exception) {
-                Toast.makeText(this, "Could not stop: " + e.message, Toast.LENGTH_LONG).show()
+                toast("Could not stop: " + e.message)
             }
         } else {
             val prepare: Intent? = try {
@@ -155,17 +225,15 @@ class MainActivity : Activity(), Host {
                 try {
                     startActivityForResult(prepare, reqVpn)
                 } catch (e: Exception) {
-                    Toast.makeText(this, "VPN is not available on this device", Toast.LENGTH_LONG).show()
+                    toast("VPN is not available on this device")
                 }
             } else {
                 sendStart()
             }
         }
-        handler.postDelayed({ home.refresh() }, 300L)
     }
 
     override fun exemptChanged() {
-        home.refresh()
         if (NetBlockService.running) {
             reapplyPending = true
             handler.removeCallbacks(reapply)
@@ -175,11 +243,9 @@ class MainActivity : Activity(), Host {
 
     private fun sendStart() {
         try {
-            startService(
-                Intent(this, NetBlockService::class.java).setAction(NetBlockService.ACTION_START)
-            )
+            startService(Intent(this, NetBlockService::class.java).setAction(NetBlockService.ACTION_START))
         } catch (e: Exception) {
-            Toast.makeText(this, "Could not start: " + e.message, Toast.LENGTH_LONG).show()
+            toast("Could not start: " + e.message)
         }
     }
 
@@ -187,12 +253,7 @@ class MainActivity : Activity(), Host {
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == reqVpn) {
-            if (resultCode == RESULT_OK) {
-                sendStart()
-                handler.postDelayed({ home.refresh() }, 300L)
-            } else {
-                Toast.makeText(this, "VPN permission is required to freeze apps", Toast.LENGTH_LONG).show()
-            }
+            if (resultCode == RESULT_OK) sendStart() else toast("VPN permission is required to freeze apps")
         }
     }
 }

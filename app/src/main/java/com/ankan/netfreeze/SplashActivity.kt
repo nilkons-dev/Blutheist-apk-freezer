@@ -23,7 +23,7 @@ class SplashActivity : Activity() {
     private val go = Runnable { openMain() }
 
     companion object {
-        private const val DURATION_MS = 3900L
+        private const val DURATION_MS = 4300L
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {

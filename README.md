@@ -1,6 +1,7 @@
-# Blutheist NetFreeze
+# Blutheist Phone Manager
 
-One-tap Android app that freezes the background internet of other apps (local VPN, no root),
-with an app picker (icons + switches), a speed test and a live latency graph.
+Black-and-white phone manager for Android: storage cleanup, system boost, app risk review,
+app management (screen time, data usage, battery), Net Freeze (VPN-based background internet
+blocker), speed test with live latency, device info and privacy center.
 
-Build: push to GitHub -> Actions -> download "Blutheist-NetFreeze-APK".
+Build: push to GitHub -> Actions -> download "Blutheist-PhoneManager-APK".
