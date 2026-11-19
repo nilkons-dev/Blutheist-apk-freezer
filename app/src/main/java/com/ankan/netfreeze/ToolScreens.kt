@@ -28,7 +28,7 @@ class FreezeScreen(ctx: Context, nav: Nav) : Screen(ctx, nav) {
     private val page = Page(ctx, nav, "Net Freeze")
     override val view: View get() = page.root
     private val handler = Handler(Looper.getMainLooper())
-    private val shield = ShieldView(ctx)
+    private val shield = RingView(ctx)
     private val titleTv = UI.text(ctx, "", 26f, UI.TEXT, UI.bold())
     private val subTv = UI.text(ctx, "", 14.5f, UI.MUTED)
     private val statApps = UI.text(ctx, "—", 20f, UI.TEXT, UI.bold())
@@ -42,8 +42,14 @@ class FreezeScreen(ctx: Context, nav: Nav) : Screen(ctx, nav) {
     }
 
     init {
-        shield.setOnClickListener { nav.toggleFreeze() }
-        page.add(shield, UI.lp(UI.dp(ctx, 190), UI.dp(ctx, 235), 0f, 0, UI.dp(ctx, 8), 0, 0).also { it.gravity = Gravity.CENTER_HORIZONTAL })
+        shield.iconKind = Ic.SNOW
+        shield.setOnClickListener {
+            UI.tap(it)
+            nav.toggleFreeze()
+        }
+        UI.press(shield, 0.94f)
+        val rs = minOf(UI.dp(ctx, 200), ctx.resources.displayMetrics.widthPixels - UI.dp(ctx, 170))
+        page.add(shield, UI.lp(rs, rs, 0f, 0, UI.dp(ctx, 8), 0, 0).also { it.gravity = Gravity.CENTER_HORIZONTAL })
         titleTv.gravity = Gravity.CENTER
         page.add(titleTv, UI.lp(UI.MATCH, UI.WRAP, 0f, 0, UI.dp(ctx, 22), 0, 0))
         subTv.gravity = Gravity.CENTER
@@ -90,18 +96,18 @@ class FreezeScreen(ctx: Context, nav: Nav) : Screen(ctx, nav) {
 
     private fun refresh() {
         val on = NetBlockService.running
-        shield.progress = if (on) -1f else 0f
-        shield.eyeAlpha = if (on) 255 else 110
+        shield.progress = if (on) 1f else 0f
+        shield.dimmed = !on
         val apps = if (AppRepo.loaded) AppRepo.frozenCount(Prefs.exempt(ctx)).toString() else "…"
         UI.setIfChanged(statApps, apps)
         if (on) {
-            UI.setIfChanged(titleTv, "Frozen")
+            UI.swapText(titleTv, "Frozen")
             UI.setIfChanged(subTv, "Background apps have no internet access")
             UI.setIfChanged(statReq, compact(NetBlockService.packets.get()))
             val secs = ((SystemClock.elapsedRealtime() - NetBlockService.startedAt) / 1000L).coerceAtLeast(0L)
             UI.setIfChanged(statTime, duration(secs))
         } else {
-            UI.setIfChanged(titleTv, "Tap the shield to freeze")
+            UI.swapText(titleTv, "Tap the circle to freeze")
             UI.setIfChanged(subTv, "Block internet for background apps with one tap")
             UI.setIfChanged(statReq, "—")
             UI.setIfChanged(statTime, "—")
@@ -618,61 +624,5 @@ class PrivacyScreen(ctx: Context, nav: Nav) : Screen(ctx, nav) {
             .setItems(names) { _, which -> openAppSettings(nav, g.apps[which].first) }
             .setNegativeButton("Close", null)
             .show()
-    }
-}
-
-// --------------------------------------------------------------------------------------- settings
-
-class SettingsScreen(ctx: Context, nav: Nav) : Screen(ctx, nav) {
-    private val page = Page(ctx, nav, "Settings")
-    override val view: View get() = page.root
-    private val usageRow: UI.RowH
-    private val filesRow: UI.RowH
-
-    init {
-        val perms = UI.card(ctx)
-        usageRow = UI.row(ctx, -1, "Usage access", "", true) { nav.openUsage() }
-        filesRow = UI.row(ctx, -1, "All files access", "", true) { nav.openAllFiles() }
-        perms.addView(usageRow.root)
-        perms.addView(UI.divider(ctx), UI.lp(UI.MATCH, 1, 0f, UI.dp(ctx, 16), 0, UI.dp(ctx, 16), 0))
-        perms.addView(filesRow.root)
-        page.add(perms)
-
-        val util = UI.card(ctx)
-        val ur = UI.row(ctx, -1, "Utilities tab", "", false, null)
-        val sw = PillSwitch(ctx)
-        sw.set(Prefs.getBool(ctx, "show_utilities", true), false)
-        ur.root.addView(sw, UI.lp(UI.WRAP, UI.WRAP, 0f, UI.dp(ctx, 8), 0, 0, 0))
-        ur.root.isClickable = true
-        ur.root.setOnClickListener {
-            val v = !sw.isOn()
-            sw.set(v, true)
-            Prefs.putBool(ctx, "show_utilities", v)
-            nav.toast(if (v) "Utilities tab shown" else "Utilities tab hidden")
-        }
-        util.addView(ur.root)
-        util.addView(UI.divider(ctx), UI.lp(UI.MATCH, 1, 0f, UI.dp(ctx, 16), 0, UI.dp(ctx, 16), 0))
-        util.addView(UI.row(ctx, -1, "Clear scan records", "", true) {
-            Prefs.putLong(ctx, "last_scan", 0L)
-            Prefs.putInt(ctx, "risk_count", 0)
-            ctx.getSharedPreferences("netfreeze_cfg", Context.MODE_PRIVATE).edit().remove("records").apply()
-            nav.toast("Records cleared")
-        }.root)
-        page.add(util, UI.lp(UI.MATCH, UI.WRAP, 0f, 0, UI.dp(ctx, 14), 0, 0))
-
-        val about = UI.card(ctx)
-        about.addView(UI.row(ctx, -1, "About Phone Manager", "v3.0", true) {
-            AlertDialog.Builder(ctx)
-                .setTitle("Blutheist Phone Manager")
-                .setMessage("Version 3.0\n\nStorage cleanup, memory boost, app risk review, app management, Net Freeze, speed test and device tools.\n\nEverything runs on your phone. No data is uploaded.")
-                .setPositiveButton("OK", null)
-                .show()
-        }.root)
-        page.add(about, UI.lp(UI.MATCH, UI.WRAP, 0f, 0, UI.dp(ctx, 14), 0, 0))
-    }
-
-    override fun onShow() {
-        usageRow.value.text = if (Sys.hasUsageAccess(ctx)) "Allowed" else "Not allowed"
-        filesRow.value.text = if (Sys.hasStorageAccess(ctx)) "Allowed" else "Not allowed"
     }
 }

@@ -19,6 +19,8 @@ interface Nav {
     fun openUsage()
     fun requestStorage()
     fun launch(i: Intent)
+    fun openTab(i: Int)
+    fun restartUi()
 }
 
 abstract class Screen(val ctx: Context, val nav: Nav) {

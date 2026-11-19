@@ -115,11 +115,12 @@ object Sys {
     }
 
     /** Asks Android to stop background processes. Returns how many packages were asked. */
-    fun killBackground(ctx: Context, only: Collection<String>? = null): Int {
+    fun killBackground(ctx: Context, only: Collection<String>? = null, extraSkip: Set<String> = emptySet()): Int {
         var n = 0
         try {
             val am = ctx.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
             val skip = protectedPackages(ctx)
+            skip.addAll(extraSkip)
             val targets: Collection<String> = only
                 ?: ctx.packageManager.getInstalledApplications(0).map { it.packageName }
             for (pkg in targets) {
@@ -196,5 +197,28 @@ object Sys {
         if (last == 0L || System.currentTimeMillis() - last > 24L * 3600L * 1000L) s -= 3
         if (battery(ctx).tempC > 42.0) s -= 4
         return s.coerceIn(0, 100)
+    }
+
+    fun fmtTemp(ctx: Context, c: Double): String {
+        return if (Prefs.getInt(ctx, "temp_unit", 0) == 1) {
+            String.format(Locale.US, "%.1f °F", c * 9.0 / 5.0 + 32.0)
+        } else {
+            String.format(Locale.US, "%.1f °C", c)
+        }
+    }
+
+    /** Clears the clipboard (Android 9+). */
+    fun clearClipboard(ctx: Context): Boolean {
+        return try {
+            val cm = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+            if (Build.VERSION.SDK_INT >= 28) {
+                cm.clearPrimaryClip()
+            } else {
+                cm.setPrimaryClip(android.content.ClipData.newPlainText("", ""))
+            }
+            true
+        } catch (e: Exception) {
+            false
+        }
     }
 }

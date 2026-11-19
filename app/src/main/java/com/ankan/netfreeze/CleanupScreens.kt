@@ -12,68 +12,63 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import java.util.concurrent.atomic.AtomicBoolean
 
-class CleanupScreen(ctx: Context, nav: Nav) : Screen(ctx, nav) {
-    private val page = Page(ctx, nav, "Clean up")
+class CleanupScreen(ctx: Context, nav: Nav, private val isTab: Boolean) : Screen(ctx, nav) {
+    private val page = Page(ctx, nav, "Clean up", scroll = true, back = !isTab)
     override val view: View get() = page.root
     private val main = Handler(Looper.getMainLooper())
 
-    private val shield = ShieldView(ctx)
-    private val titleTv = UI.text(ctx, "", 28f, UI.TEXT, UI.bold())
+    private val ring = RingView(ctx)
+    private val titleTv = UI.text(ctx, "", 26f, UI.TEXT, UI.bold())
     private val subTv = UI.text(ctx, "", 15f, UI.MUTED)
-    private val sizeTv = UI.text(ctx, "", 26f, UI.TEXT, UI.bold())
-    private val unitTv = UI.text(ctx, "", 13f, UI.MUTED)
+    private val progressBar = ThinProgress(ctx)
     private val cleanBtn = UI.pill(ctx, "Clean", true)
     private val permCard = UI.card(ctx)
     private val storageVal = UI.text(ctx, "", 13.5f, UI.MUTED)
     private val bar = SegBar(ctx)
+    private val legend = LinearLayout(ctx)
+    private val breakdownHost = LinearLayout(ctx)
     private val listHost = LinearLayout(ctx)
     private var scanning = false
     private var cleaning = false
 
     init {
         listHost.orientation = LinearLayout.VERTICAL
+        breakdownHost.orientation = LinearLayout.VERTICAL
+        legend.orientation = LinearLayout.VERTICAL
 
-        // header: title on the left, shield with size on the right
-        val head = LinearLayout(ctx)
-        head.orientation = LinearLayout.HORIZONTAL
-        head.gravity = Gravity.CENTER_VERTICAL
-        val left = LinearLayout(ctx)
-        left.orientation = LinearLayout.VERTICAL
-        left.addView(titleTv)
-        left.addView(subTv, UI.lp(UI.WRAP, UI.WRAP, 0f, 0, UI.dp(ctx, 6), 0, 0))
-        head.addView(left, UI.lp(0, UI.WRAP, 1f))
-        val sf = FrameLayout(ctx)
-        shield.mode = ShieldView.NONE
-        sf.addView(shield, FrameLayout.LayoutParams(UI.MATCH, UI.MATCH))
-        val cc = LinearLayout(ctx)
-        cc.orientation = LinearLayout.VERTICAL
-        cc.gravity = Gravity.CENTER
-        cc.addView(sizeTv)
-        cc.addView(unitTv)
-        sf.addView(cc, FrameLayout.LayoutParams(UI.MATCH, UI.MATCH))
-        head.addView(sf, UI.lp(UI.dp(ctx, 100), UI.dp(ctx, 126)))
-        page.add(head, UI.lp(UI.MATCH, UI.WRAP, 0f, UI.dp(ctx, 6), UI.dp(ctx, 6), UI.dp(ctx, 6), 0))
+        val rs = minOf(UI.dp(ctx, 200), ctx.resources.displayMetrics.widthPixels - UI.dp(ctx, 170))
+        page.add(ring, UI.lp(rs, rs, 0f, 0, UI.dp(ctx, 6), 0, 0).also { it.gravity = Gravity.CENTER_HORIZONTAL })
+        titleTv.gravity = Gravity.CENTER
+        page.add(titleTv, UI.lp(UI.MATCH, UI.WRAP, 0f, 0, UI.dp(ctx, 24), 0, 0))
+        subTv.gravity = Gravity.CENTER
+        page.add(subTv, UI.lp(UI.MATCH, UI.WRAP, 0f, UI.dp(ctx, 10), UI.dp(ctx, 8), UI.dp(ctx, 10), 0))
+        progressBar.visibility = View.GONE
+        page.add(progressBar, UI.lp(UI.MATCH, UI.dp(ctx, 6), 0f, UI.dp(ctx, 30), UI.dp(ctx, 16), UI.dp(ctx, 30), 0))
 
-        cleanBtn.setOnClickListener { clean() }
-        val bw = minOf(UI.dp(ctx, 280), ctx.resources.displayMetrics.widthPixels - UI.dp(ctx, 70))
+        cleanBtn.setOnClickListener {
+            UI.tap(it)
+            clean()
+        }
+        val bw = minOf(UI.dp(ctx, 300), ctx.resources.displayMetrics.widthPixels - UI.dp(ctx, 80))
         page.add(cleanBtn, UI.lp(bw, UI.WRAP, 0f, 0, UI.dp(ctx, 22), 0, 0).also { it.gravity = Gravity.CENTER_HORIZONTAL })
 
-        // permission card
         permCard.setPadding(UI.dp(ctx, 20), UI.dp(ctx, 20), UI.dp(ctx, 20), UI.dp(ctx, 20))
         permCard.addView(UI.text(ctx, "File access needed", 18f, UI.TEXT, UI.medium()))
         permCard.addView(
-            UI.text(ctx, "To find junk, big files and old APKs, Blutheist needs permission to see files on your phone. Nothing leaves your device.", 14f, UI.MUTED),
+            UI.text(ctx, "To find junk, 0 KB files, big files and old APKs everywhere on your phone, Blutheist needs permission to see your files. Nothing leaves your device.", 14f, UI.MUTED),
             UI.lp(UI.MATCH, UI.WRAP, 0f, 0, UI.dp(ctx, 8), 0, UI.dp(ctx, 16))
         )
-        val allow = UI.pill(ctx, "Allow access", true)
+        val allow = UI.pill(ctx, "Allow access", false)
         allow.setOnClickListener { nav.openAllFiles() }
         permCard.addView(allow, UI.lp(UI.MATCH, UI.WRAP))
         permCard.visibility = View.GONE
         page.add(permCard, UI.lp(UI.MATCH, UI.WRAP, 0f, 0, UI.dp(ctx, 22), 0, 0))
 
+        page.add(breakdownHost, UI.lp(UI.MATCH, UI.WRAP, 0f, 0, UI.dp(ctx, 4), 0, 0))
+
         // storage card
         val sc = UI.card(ctx)
-        sc.setPadding(UI.dp(ctx, 20), UI.dp(ctx, 18), UI.dp(ctx, 20), UI.dp(ctx, 20))
+        sc.setPadding(UI.dp(ctx, 20), UI.dp(ctx, 18), UI.dp(ctx, 20), UI.dp(ctx, 18))
         val sr = LinearLayout(ctx)
         sr.orientation = LinearLayout.HORIZONTAL
         sr.gravity = Gravity.CENTER_VERTICAL
@@ -81,54 +76,59 @@ class CleanupScreen(ctx: Context, nav: Nav) : Screen(ctx, nav) {
         sr.addView(storageVal, UI.lp(UI.WRAP, UI.WRAP))
         sc.addView(sr)
         sc.addView(bar, UI.lp(UI.MATCH, UI.dp(ctx, 12), 0f, 0, UI.dp(ctx, 16), 0, 0))
+        sc.addView(legend, UI.lp(UI.MATCH, UI.WRAP, 0f, 0, UI.dp(ctx, 14), 0, 0))
         page.add(sc, UI.lp(UI.MATCH, UI.WRAP, 0f, 0, UI.dp(ctx, 22), 0, 0))
         page.add(listHost)
         updateStorage(null)
     }
 
     override fun onShow() {
+        updateStorage(Cleaner.last)
         if (!Sys.hasStorageAccess(ctx)) {
             showState(0)
-            updateStorage(null)
             return
         }
         val r = Cleaner.last
-        if (r != null) {
+        if (r != null && !scanning && !cleaning) {
             render(r)
-        } else if (!scanning) {
+        } else if (r == null && !scanning && !cleaning) {
             startScan()
         }
     }
 
+    /** 0 = needs permission, 1 = scanning, 2 = junk found, 3 = cleaning, 4 = clean */
     private fun showState(s: Int) {
         permCard.visibility = if (s == 0) View.VISIBLE else View.GONE
-        cleanBtn.visibility = if (s == 2) View.VISIBLE else View.GONE
-        shield.setSpinning(s == 1)
+        cleanBtn.visibility = if (s == 2 || s == 0) View.VISIBLE else View.GONE
+        progressBar.visibility = if (s == 1 || s == 3) View.VISIBLE else View.GONE
+        ring.setSpinning(s == 1 || s == 3)
         when (s) {
             0 -> {
-                titleTv.text = "Allow access"
-                subTv.text = "to scan your storage"
-                sizeTv.text = ""
-                unitTv.text = ""
-                shield.mode = ShieldView.NONE
-                shield.progress = 0f
+                UI.swapText(titleTv, "Clear app caches")
+                UI.swapText(subTv, "Allow file access to also find junk and 0 KB files everywhere")
+                cleanBtn.text = "Clear app caches"
+                ring.check = false
+                ring.iconKind = Ic.SPARKLE
             }
             1 -> {
-                titleTv.text = "Scanning…"
-                sizeTv.text = ""
-                unitTv.text = ""
-                shield.mode = ShieldView.NONE
-                shield.progress = 0f
+                UI.swapText(titleTv, "Scanning storage…")
+                ring.check = false
+                ring.iconKind = -1
+                ring.valueText = ""
+                ring.unitText = ""
             }
             2 -> {
-                shield.mode = ShieldView.NONE
-                shield.progress = -1f
+                cleanBtn.text = "Clean"
+                ring.check = false
+                ring.iconKind = -1
+            }
+            3 -> {
+                UI.swapText(titleTv, "Cleaning…")
             }
             else -> {
-                sizeTv.text = ""
-                unitTv.text = ""
-                shield.mode = ShieldView.CHECK
-                shield.progress = -1f
+                ring.iconKind = -1
+                ring.check = true
+                ring.animateTo(1f, 600)
             }
         }
     }
@@ -136,10 +136,16 @@ class CleanupScreen(ctx: Context, nav: Nav) : Screen(ctx, nav) {
     private fun startScan() {
         scanning = true
         showState(1)
-        subTv.text = "Looking for junk files"
+        subTv.text = "Looking for junk, cache and 0 KB files"
+        ring.progress = 0f
+        val st = Sys.storage()
+        val used = (st.total - st.free).coerceAtLeast(1L)
         Thread {
-            val r = Cleaner.scan(Cleaner.root(), AtomicBoolean(false)) { n ->
-                main.post { subTv.text = "$n files checked" }
+            val r = Cleaner.scan(Cleaner.root(), AtomicBoolean(false)) { n, bytes ->
+                main.post {
+                    subTv.text = String.format(java.util.Locale.US, "%,d files · %s checked", n, Sys.fmtBytes(bytes))
+                    progressBar.value = (bytes.toFloat() / used).coerceAtMost(0.98f)
+                }
             }
             main.post {
                 Cleaner.last = r
@@ -150,48 +156,91 @@ class CleanupScreen(ctx: Context, nav: Nav) : Screen(ctx, nav) {
     }
 
     private fun render(r: ScanResult) {
-        if (cleaning) return
         if (r.junkBytes > 0L || r.emptyDirs.isNotEmpty()) {
             showState(2)
-            titleTv.text = "Junk files detected"
+            UI.swapText(titleTv, "Junk files detected")
             subTv.text = r.junk.size.toString() + " files · " + r.emptyDirs.size + " empty folders"
             val s = Sys.fmtBytes(r.junkBytes)
-            sizeTv.text = s.substringBefore(' ')
-            unitTv.text = s.substringAfter(' ', "")
+            ring.valueText = s.substringBefore(' ')
+            ring.unitText = s.substringAfter(' ', "")
+            ring.animateTo(1f, 800)
         } else {
-            showState(3)
-            titleTv.text = "Your phone is clean"
-            subTv.text = "No junk files found"
+            showState(4)
+            UI.swapText(titleTv, "Your phone is clean")
+            subTv.text = "No junk, cache or 0 KB files found"
         }
         updateStorage(r)
+        buildBreakdown(r)
         buildLists(r)
     }
 
     private fun clean() {
-        val r = Cleaner.last ?: return
         if (cleaning) return
-        cleaning = true
-        cleanBtn.text = "Cleaning…"
-        cleanBtn.alpha = 0.6f
-        shield.setSpinning(true)
         val app = ctx.applicationContext
+        val r = Cleaner.last
+        cleaning = true
+        cleanBtn.visibility = View.GONE
+        showState(3)
+        ring.progress = 0f
+        progressBar.value = 0f
         Thread {
-            var freed = Cleaner.delete(r.junk)
-            Cleaner.deleteEmptyDirs(r.emptyDirs)
+            var freed = 0L
+            // 1. caches of every app (done by Android itself)
+            main.post { subTv.text = "Clearing app caches…" }
+            freed += Cleaner.clearSystemCaches(app)
             freed += Cleaner.clearOwnCache(app)
-            r.junk.clear()
-            r.emptyDirs.clear()
-            r.junkBytes = 0L
+            if (Sys.hasStorageAccess(app)) freed += Cleaner.clearLegacyAppCaches(Cleaner.root())
+            val f1 = freed
+            main.post {
+                subTv.text = Sys.fmtBytes(f1) + " freed so far"
+                progressBar.animateTo(0.2f)
+            }
+            // 2. junk files, a few at a time
+            if (r != null) {
+                val total = r.junk.size.coerceAtLeast(1)
+                var done = 0
+                for (e in r.junk.toList()) {
+                    try {
+                        if (e.file.delete()) freed += e.size
+                    } catch (ex: Exception) {
+                        // ignore
+                    }
+                    done++
+                    if (done % 25 == 0 || done == r.junk.size) {
+                        val fNow = freed
+                        val p = 0.2f + 0.7f * done / total
+                        main.post {
+                            subTv.text = Sys.fmtBytes(fNow) + " freed · " + done + " of " + total + " files"
+                            progressBar.animateTo(p)
+                            ring.progress = p
+                        }
+                    }
+                }
+                // 3. empty folders
+                Cleaner.deleteEmptyDirs(r.emptyDirs)
+                r.junk.clear()
+                r.emptyDirs.clear()
+                r.junkBytes = 0L
+                for (i in 0 until 4) {
+                    r.catBytes[i] = 0L
+                    r.catCount[i] = 0
+                }
+            }
+            val total = freed
             main.post {
                 cleaning = false
-                cleanBtn.text = "Clean"
-                cleanBtn.alpha = 1f
-                showState(3)
-                titleTv.text = "Cleanup complete"
-                subTv.text = Sys.fmtBytes(freed) + " cleared"
-                Prefs.addRecord(app, "Storage cleanup", Sys.fmtBytes(freed) + " cleared")
-                updateStorage(r)
-                buildLists(r)
+                showState(4)
+                UI.swapText(titleTv, "Cleanup complete")
+                subTv.text = Sys.fmtBytes(total) + " cleared"
+                progressBar.visibility = View.GONE
+                Prefs.addRecord(app, "Storage cleanup", Sys.fmtBytes(total) + " cleared")
+                if (r != null) {
+                    updateStorage(r)
+                    buildBreakdown(r)
+                    buildLists(r)
+                } else {
+                    updateStorage(null)
+                }
             }
         }.start()
     }
@@ -201,37 +250,84 @@ class CleanupScreen(ctx: Context, nav: Nav) : Screen(ctx, nav) {
         val used = st.total - st.free
         storageVal.text = Sys.fmtBytes(used) + " of " + Sys.fmtBytes(st.total) + " used"
         val total = st.total.toFloat().coerceAtLeast(1f)
+        legend.removeAllViews()
         if (r == null) {
-            bar.setParts(listOf(Pair(used / total, Color.WHITE)))
+            bar.setParts(listOf(Pair(used / total, UI.ACCENT)))
+            legend.visibility = View.GONE
             return
         }
+        legend.visibility = View.VISIBLE
         val rest = r.audioBytes + r.docBytes + r.archiveBytes + r.apkBytes
         val media = r.imageBytes + r.videoBytes + rest
         val other = (used - media).coerceAtLeast(0L)
-        bar.setParts(
-            listOf(
-                Pair(other / total, Color.WHITE),
-                Pair(r.imageBytes / total, Color.parseColor("#A0A0A6")),
-                Pair(r.videoBytes / total, Color.parseColor("#6C6C72")),
-                Pair(rest / total, Color.parseColor("#45454A"))
-            )
+        val c2 = Color.parseColor("#A0A0A6")
+        val c3 = Color.parseColor("#6C6C72")
+        val c4 = Color.parseColor("#45454A")
+        bar.setParts(listOf(Pair(other / total, UI.ACCENT), Pair(r.imageBytes / total, c2), Pair(r.videoBytes / total, c3), Pair(rest / total, c4)))
+        val items = arrayOf(
+            Triple(UI.ACCENT, "Apps & system", other), Triple(c2, "Photos", r.imageBytes),
+            Triple(c3, "Videos", r.videoBytes), Triple(c4, "Audio, documents, archives, APKs", rest),
+            Triple(UI.CARD2, "Free", st.free)
         )
+        for (it in items) {
+            val row = LinearLayout(ctx)
+            row.orientation = LinearLayout.HORIZONTAL
+            row.gravity = Gravity.CENTER_VERTICAL
+            val dot = View(ctx)
+            dot.background = UI.rounded(ctx, it.first, 5f, UI.STROKE, 1f)
+            row.addView(dot, UI.lp(UI.dp(ctx, 10), UI.dp(ctx, 10)))
+            row.addView(UI.text(ctx, it.second, 14f, Color.parseColor("#C9C9CF")), UI.lp(0, UI.WRAP, 1f, UI.dp(ctx, 10), 0, 0, 0))
+            row.addView(UI.text(ctx, Sys.fmtBytes(it.third), 14f, UI.MUTED), UI.lp(UI.WRAP, UI.WRAP))
+            legend.addView(row, UI.lp(UI.MATCH, UI.WRAP, 0f, 0, UI.dp(ctx, 8), 0, 0))
+        }
+    }
+
+    private fun buildBreakdown(r: ScanResult) {
+        breakdownHost.removeAllViews()
+        breakdownHost.addView(UI.sectionLabel(ctx, "What was found"), UI.lp(UI.MATCH, UI.WRAP, 0f, 0, 0, 0, UI.dp(ctx, 10)))
+        val c = UI.card(ctx)
+        val icons = intArrayOf(Ic.FILE, Ic.BOX, Ic.IMAGE, Ic.TRASH)
+        for (i in 0 until 4) {
+            val row = ItemRow(ctx)
+            row.showIcon(icons[i])
+            row.title.text = Cleaner.CAT_NAMES[i]
+            row.sub.text = r.catCount[i].toString() + " files"
+            row.rtext.visibility = View.VISIBLE
+            row.rtext.text = Sys.fmtBytes(r.catBytes[i])
+            c.addView(row)
+            c.addView(UI.divider(ctx), UI.lp(UI.MATCH, 1, 0f, UI.dp(ctx, 16), 0, UI.dp(ctx, 16), 0))
+        }
+        val e = ItemRow(ctx)
+        e.showIcon(Ic.FOLDER)
+        e.title.text = "Empty folders"
+        e.sub.text = r.emptyDirs.size.toString() + " folders"
+        e.rtext.visibility = View.VISIBLE
+        e.rtext.text = "0 B"
+        c.addView(e)
+        breakdownHost.addView(c, UI.lp(UI.MATCH, UI.WRAP, 0f, 0, 0, 0, UI.dp(ctx, 4)))
+        val last = Prefs.records(ctx).firstOrNull { it.contains("|Storage cleanup|") }
+        if (last != null) {
+            val p = last.split("|")
+            val t = UI.text(ctx, "Last cleanup: " + p[2] + " · " + Sys.ago(p[0].toLongOrNull() ?: 0L), 13f, UI.MUTED)
+            t.gravity = Gravity.CENTER
+            breakdownHost.addView(t, UI.lp(UI.MATCH, UI.WRAP, 0f, UI.dp(ctx, 8), UI.dp(ctx, 10), UI.dp(ctx, 8), UI.dp(ctx, 4)))
+        }
     }
 
     private fun buildLists(r: ScanResult) {
         listHost.removeAllViews()
         listHost.addView(UI.sectionLabel(ctx, "App cleanup"), UI.lp(UI.MATCH, UI.WRAP, 0f, 0, UI.dp(ctx, 24), 0, UI.dp(ctx, 10)))
         val a = UI.card(ctx)
-        a.addView(UI.row(ctx, Ic.CHAT, "WhatsApp cleaner", Sys.fmtBytes(r.whatsappBytes), true) { nav.push(AppMediaScreen(ctx, nav, 0)) }.root)
-        a.addView(UI.divider(ctx), UI.lp(UI.MATCH, 1, 0f, UI.dp(ctx, 16), 0, UI.dp(ctx, 16), 0))
-        a.addView(UI.row(ctx, Ic.SEND, "Telegram cleaner", Sys.fmtBytes(r.telegramBytes), true) { nav.push(AppMediaScreen(ctx, nav, 1)) }.root)
+        a.addView(descRow(ctx, Ic.CHAT, "WhatsApp cleaner", Sys.fmtBytes(r.whatsappBytes) + " of media on this phone") { nav.push(AppMediaScreen(ctx, nav, 0)) })
+        a.addView(UI.divider(ctx), UI.lp(UI.MATCH, 1, 0f, UI.dp(ctx, 76), 0, UI.dp(ctx, 16), 0))
+        a.addView(descRow(ctx, Ic.SEND, "Telegram cleaner", Sys.fmtBytes(r.telegramBytes) + " of media on this phone") { nav.push(AppMediaScreen(ctx, nav, 1)) })
         listHost.addView(a)
 
         listHost.addView(UI.sectionLabel(ctx, "Recommended cleanup"), UI.lp(UI.MATCH, UI.WRAP, 0f, 0, UI.dp(ctx, 24), 0, UI.dp(ctx, 10)))
         val b = UI.card(ctx)
-        val largeBytes = r.large.sumOf { it.size }
         val rows = arrayOf(
-            Triple(Ic.FILE, "Large files", Pair(0, largeBytes)),
+            Triple(Ic.HOURGLASS, "Old large files", Pair(7, r.old.sumOf { it.size })),
+            Triple(Ic.FILE, "Large files", Pair(0, r.large.sumOf { it.size })),
             Triple(Ic.VIDEO, "Videos", Pair(2, r.videoBytes)),
             Triple(Ic.IMAGE, "Photos", Pair(3, r.imageBytes)),
             Triple(Ic.BOX, "APK files", Pair(1, r.apkBytes)),
@@ -241,17 +337,37 @@ class CleanupScreen(ctx: Context, nav: Nav) : Screen(ctx, nav) {
         )
         for (i in rows.indices) {
             val t = rows[i]
-            b.addView(UI.row(ctx, t.first, t.second, Sys.fmtBytes(t.third.second), true) { nav.push(FileListScreen(ctx, nav, t.third.first)) }.root)
+            val row = ItemRow(ctx)
+            row.showIcon(t.first)
+            row.title.text = t.second
+            row.sub.text = "Tap to review and delete"
+            row.rtext.visibility = View.VISIBLE
+            row.rtext.text = Sys.fmtBytes(t.third.second)
+            row.showChevron()
+            row.isClickable = true
+            val kind = t.third.first
+            row.setOnClickListener {
+                UI.tap(it)
+                nav.push(FileListScreen(ctx, nav, kind))
+            }
+            UI.press(row, 0.985f)
+            b.addView(row)
             if (i < rows.size - 1) b.addView(UI.divider(ctx), UI.lp(UI.MATCH, 1, 0f, UI.dp(ctx, 16), 0, UI.dp(ctx, 16), 0))
         }
         listHost.addView(b)
+
+        listHost.addView(UI.sectionLabel(ctx, "How cleanup works"), UI.lp(UI.MATCH, UI.WRAP, 0f, 0, UI.dp(ctx, 24), 0, UI.dp(ctx, 10)))
+        val info = UI.card(ctx)
+        info.setPadding(UI.dp(ctx, 20), UI.dp(ctx, 18), UI.dp(ctx, 20), UI.dp(ctx, 18))
+        info.addView(UI.text(ctx, "Blutheist reads every folder it is allowed to see and finds cache files, temp and log files, thumbnails, 0 KB files and empty folders. Cache of other apps is cleared by Android itself. Photos, videos and documents are never deleted unless you pick them.", 14f, UI.MUTED))
+        listHost.addView(info)
     }
 }
 
 /** Files of one category from the last scan, with check boxes and delete. */
 class FileListScreen(ctx: Context, nav: Nav, private val kind: Int) : Screen(ctx, nav) {
-    private val titles = arrayOf("Large files", "APK files", "Videos", "Photos", "Audio", "Documents", "Archives")
-    private val icons = intArrayOf(Ic.FILE, Ic.BOX, Ic.VIDEO, Ic.IMAGE, Ic.MUSIC, Ic.FILE, Ic.ARCHIVE)
+    private val titles = arrayOf("Large files", "APK files", "Videos", "Photos", "Audio", "Documents", "Archives", "Old large files")
+    private val icons = intArrayOf(Ic.FILE, Ic.BOX, Ic.VIDEO, Ic.IMAGE, Ic.MUSIC, Ic.FILE, Ic.ARCHIVE, Ic.HOURGLASS)
     private val page = Page(ctx, nav, titles[kind], scroll = false)
     override val view: View get() = page.root
     private val main = Handler(Looper.getMainLooper())
@@ -300,7 +416,8 @@ class FileListScreen(ctx: Context, nav: Nav, private val kind: Int) : Screen(ctx
                 3 -> r.images
                 4 -> r.audio
                 5 -> r.docs
-                else -> r.archives
+                6 -> r.archives
+                else -> r.old
             }
             for (e in src) items.add(e)
         }
@@ -327,6 +444,10 @@ class FileListScreen(ctx: Context, nav: Nav, private val kind: Int) : Screen(ctx
     private fun confirm() {
         val sel = items.filter { it.selected }
         if (sel.isEmpty()) return
+        if (!Prefs.getBool(ctx, "confirm_delete", true)) {
+            doDelete(sel)
+            return
+        }
         AlertDialog.Builder(ctx)
             .setTitle("Delete files?")
             .setMessage(sel.size.toString() + " file(s), " + Sys.fmtBytes(sel.sumOf { it.size }) + ", will be permanently deleted.")
@@ -341,7 +462,7 @@ class FileListScreen(ctx: Context, nav: Nav, private val kind: Int) : Screen(ctx
             main.post {
                 val r = Cleaner.last
                 if (r != null) {
-                    for (l in listOf(r.large, r.apks, r.videos, r.images, r.audio, r.docs, r.archives)) {
+                    for (l in listOf(r.large, r.old, r.apks, r.videos, r.images, r.audio, r.docs, r.archives)) {
                         l.removeAll { !it.file.exists() }
                     }
                     when (kind) {

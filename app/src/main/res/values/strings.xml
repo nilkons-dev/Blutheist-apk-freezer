@@ -1,4 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Blutheist Phone Manager</string>
+    <string name="applock_desc">Blutheist App Lock checks which app is opened so it can ask for your PIN before a locked app is shown. It does not read what is on your screen.</string>
 </resources>

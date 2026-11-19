@@ -26,6 +26,7 @@ class ItemRow(ctx: Context) : LinearLayout(ctx) {
     val rtext = UI.text(ctx, "", 14f, UI.MUTED)
     val check = CheckView(ctx)
     val pill = PillSwitch(ctx)
+    val chev = IconView(ctx, Ic.CHEVRON)
     var boundKey: String? = null
 
     init {
@@ -66,6 +67,13 @@ class ItemRow(ctx: Context) : LinearLayout(ctx) {
         addView(check, UI.lp(UI.WRAP, UI.WRAP))
         pill.visibility = View.GONE
         addView(pill, UI.lp(UI.WRAP, UI.WRAP))
+        chev.tint = UI.MUTED
+        chev.visibility = View.GONE
+        addView(chev, UI.lp(UI.dp(ctx, 18), UI.dp(ctx, 18), 0f, UI.dp(ctx, 4), 0, 0, 0))
+    }
+
+    fun showChevron() {
+        chev.visibility = View.VISIBLE
     }
 
     fun showIcon(kind: Int) {
@@ -118,5 +126,50 @@ object Lists {
         t.gravity = Gravity.CENTER
         t.visibility = View.GONE
         return t
+    }
+}
+
+/** A tappable card row with icon, title and a description line. */
+fun descRow(ctx: Context, icon: Int, title: String, desc: String, onClick: () -> Unit): ItemRow {
+    val r = ItemRow(ctx)
+    r.showIcon(icon)
+    r.title.text = title
+    r.sub.text = desc
+    r.sub.isSingleLine = false
+    r.sub.maxLines = 2
+    r.sub.ellipsize = TextUtils.TruncateAt.END
+    r.showChevron()
+    r.isClickable = true
+    r.setOnClickListener {
+        UI.tap(it)
+        onClick()
+    }
+    UI.press(r, 0.985f)
+    return r
+}
+
+/** One step of a multi-step task (icon, title, status line, progress indicator). */
+class StepRow(ctx: Context, icon: Int, title: String, sub: String) : LinearLayout(ctx) {
+    val titleTv = UI.text(ctx, title, 17f, UI.TEXT, UI.bold())
+    val subTv = UI.text(ctx, sub, 14f, UI.MUTED)
+    val status = StatusView(ctx)
+
+    init {
+        orientation = HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+        setPadding(UI.dp(ctx, 16), UI.dp(ctx, 14), UI.dp(ctx, 16), UI.dp(ctx, 14))
+        addView(UI.iconBox(ctx, icon), UI.lp(UI.dp(ctx, 46), UI.dp(ctx, 46)))
+        val col = LinearLayout(ctx)
+        col.orientation = VERTICAL
+        subTv.maxLines = 2
+        col.addView(titleTv, UI.lp(UI.WRAP, UI.WRAP))
+        col.addView(subTv, UI.lp(UI.MATCH, UI.WRAP, 0f, 0, UI.dp(ctx, 4), 0, 0))
+        addView(col, UI.lp(0, UI.WRAP, 1f, UI.dp(ctx, 14), 0, UI.dp(ctx, 10), 0))
+        addView(status, UI.lp(UI.WRAP, UI.WRAP))
+    }
+
+    fun state(s: Int, text: String) {
+        status.setState(s)
+        UI.swapText(subTv, text)
     }
 }

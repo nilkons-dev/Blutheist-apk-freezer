@@ -14,6 +14,7 @@ import android.graphics.RectF
 import android.graphics.Shader
 import android.view.View
 import android.view.animation.LinearInterpolator
+import android.view.animation.OvershootInterpolator
 import kotlin.math.max
 import kotlin.math.min
 
@@ -98,6 +99,20 @@ object Ic {
     const val ARCHIVE = 33
     const val INFO = 34
     const val SEND = 35
+    const val FOLDER = 36
+    const val SLIDERS = 37
+    const val CLIPBOARD = 38
+    const val COPY = 39
+    const val PIE = 40
+    const val HOURGLASS = 41
+    const val KEY = 42
+    const val SUN = 43
+    const val BACKSPACE = 44
+    const val WIFI = 45
+    const val BLUETOOTH = 46
+    const val VOLUME = 47
+    const val CODE = 48
+    const val HOME = 49
 
     val PATHS = arrayOf(
         "M11 4 C11.6 9 13 10.6 18 11.5 C13 12.4 11.6 14 11 19 C10.4 14 9 12.4 4 11.5 C9 10.6 10.4 9 11 4 Z M19 3 V7 M17 5 H21",
@@ -135,7 +150,21 @@ object Ic {
         "M9 18 V6 L19 4 V16 O7 18 2 O17 16 2",
         "R4 4 16 5 1.5 M5 9 V19 H19 V9 M10 13 H14",
         "O12 12 9 M12 11 V16.5 M12 7.7 V7.8",
-        "M21 4 L3 11 L10 13 L12 20 Z M10 13 L21 4"
+        "M21 4 L3 11 L10 13 L12 20 Z M10 13 L21 4",
+        "M3 7 C3 5.9 3.9 5 5 5 H9.5 L11.5 7.5 H19 C20.1 7.5 21 8.4 21 9.5 V17 C21 18.1 20.1 19 19 19 H5 C3.9 19 3 18.1 3 17 Z",
+        "M4 7 H14 M18 7 H20 M4 17 H6 M10 17 H20 O16 7 2 O8 17 2",
+        "R5 4.5 14 16.5 2.5 M9 4.5 V3 H15 V4.5 M8.5 10 H15.5 M8.5 14 H13",
+        "R8 8 12 12 2 M16 8 V6 C16 5.4 15.6 5 15 5 H6 C5.4 5 5 5.4 5 6 V15 C5 15.6 5.4 16 6 16 H8",
+        "M12 3 V12 H21 M12 3 C7 3 3 7 3 12 C3 17 7 21 12 21 C17 21 21 17 21 12",
+        "M6 3 H18 M6 21 H18 M7 3 C7 8 11 10 12 12 C13 14 17 16 17 21 M17 3 C17 8 13 10 12 12 C11 14 7 16 7 21",
+        "O8 12 4 M12 12 H21 M18 12 V16 M21 12 V15",
+        "O12 12 4 M12 3 V5 M12 19 V21 M3 12 H5 M19 12 H21 M5.6 5.6 L7 7 M17 17 L18.4 18.4 M5.6 18.4 L7 17 M17 7 L18.4 5.6",
+        "M9 5 H20 C20.6 5 21 5.4 21 6 V18 C21 18.6 20.6 19 20 19 H9 L3 12 Z M12 9 L17 15 M17 9 L12 15",
+        "M2.5 9 C8 4 16 4 21.5 9 M5.5 12.5 C9 9.5 15 9.5 18.5 12.5 M8.5 16 C10.5 14.3 13.5 14.3 15.5 16 M12 19.5 V19.6",
+        "M7 7 L17 17 L12 22 V2 L17 7 L7 17",
+        "M4 9 H8 L13 5 V19 L8 15 H4 Z M16.5 9 C18 10.5 18 13.5 16.5 15",
+        "M8 7 L3 12 L8 17 M16 7 L21 12 L16 17 M14 5 L10 19",
+        "M3 11 L12 4 L21 11 V20 H15 V14 H9 V20 H3 Z"
     )
 }
 
@@ -197,6 +226,29 @@ class ShieldView(context: Context) : View(context) {
             invalidate()
         }
 
+    var centerText: String = ""
+        set(v) {
+            field = v
+            invalidate()
+        }
+
+    var centerUnit: String = ""
+        set(v) {
+            field = v
+            invalidate()
+        }
+
+    private val textBig = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.WHITE
+        textAlign = Paint.Align.CENTER
+        typeface = UI.bold()
+        textSize = 120f
+    }
+    private val textSmall = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.parseColor("#9A9AA2")
+        textAlign = Paint.Align.CENTER
+        textSize = 34f
+    }
     private var wantSpin = false
     private var spinAnim: ValueAnimator? = null
     private var spinT = 0f
@@ -329,6 +381,9 @@ class ShieldView(context: Context) : View(context) {
             fillW.alpha = 255
         } else if (mode == CHECK) {
             canvas.drawPath(check, checkPaint)
+        } else if (centerText.isNotEmpty()) {
+            canvas.drawText(centerText, 256f, 320f, textBig)
+            if (centerUnit.isNotEmpty()) canvas.drawText(centerUnit, 256f, 372f, textSmall)
         }
         canvas.restore()
     }
@@ -373,12 +428,12 @@ class PillSwitch(context: Context) : View(context) {
     override fun onDraw(canvas: Canvas) {
         val w = width.toFloat()
         val h = height.toFloat()
-        trackPaint.color = argb.evaluate(t, trackOff, Color.WHITE) as Int
+        trackPaint.color = argb.evaluate(t, trackOff, UI.ACCENT) as Int
         canvas.drawRoundRect(0f, 0f, w, h, h / 2f, h / 2f, trackPaint)
         val pad = h * 0.15f
         val r = h / 2f - pad
         val cx = pad + r + (w - 2f * pad - 2f * r) * t
-        knobPaint.color = argb.evaluate(t, knobOff, Color.BLACK) as Int
+        knobPaint.color = argb.evaluate(t, knobOff, UI.ON_ACCENT) as Int
         canvas.drawCircle(cx, h / 2f, r, knobPaint)
     }
 }
@@ -387,7 +442,13 @@ class PillSwitch(context: Context) : View(context) {
 class CheckView(context: Context) : View(context) {
     var checked: Boolean = false
         set(v) {
+            val changed = field != v
             field = v
+            if (changed && v && UI.anim) {
+                scaleX = 0.78f
+                scaleY = 0.78f
+                animate().scaleX(1f).scaleY(1f).setDuration(260).setInterpolator(OvershootInterpolator(2.4f)).start()
+            }
             invalidate()
         }
     private val box = Paint(Paint.ANTI_ALIAS_FLAG)
@@ -409,7 +470,8 @@ class CheckView(context: Context) : View(context) {
         val r = UI.dpf(context, 8f)
         if (checked) {
             box.style = Paint.Style.FILL
-            box.color = Color.WHITE
+            box.color = UI.ACCENT
+            mark.color = UI.ON_ACCENT
             canvas.drawRoundRect(0f, 0f, w, h, r, r, box)
             canvas.save()
             canvas.scale(w / 24f, h / 24f)
@@ -440,7 +502,7 @@ class SegBar(context: Context) : View(context) {
         val w = width.toFloat()
         val h = height.toFloat()
         val rad = h / 2f
-        p.color = Color.parseColor("#1F1F23")
+        p.color = UI.CARD2
         canvas.drawRoundRect(0f, 0f, w, h, rad, rad, p)
         val clip = Path()
         clip.addRoundRect(RectF(0f, 0f, w, h), rad, rad, Path.Direction.CW)
@@ -491,7 +553,7 @@ class BarsView(context: Context) : View(context) {
         val col = w / bars.size
         val bw = min(col * 0.55f, UI.dpf(context, 40f))
         val rad = bw / 2f
-        fill.shader = LinearGradient(0f, 0f, 0f, barArea, Color.WHITE, Color.parseColor("#BDBDC4"), Shader.TileMode.CLAMP)
+        fill.shader = LinearGradient(0f, 0f, 0f, barArea, UI.ACCENT, UI.blend(UI.ACCENT, Color.BLACK, 0.3f), Shader.TileMode.CLAMP)
         for (i in bars.indices) {
             val cx = col * i + col / 2f
             canvas.drawRoundRect(cx - bw / 2f, 0f, cx + bw / 2f, barArea, rad, rad, track)
@@ -520,11 +582,29 @@ class ThinProgress(context: Context) : View(context) {
             invalidate()
         }
 
+    private var shown = 0f
+    private var va: ValueAnimator? = null
+
+    fun animateTo(v: Float) {
+        va?.cancel()
+        val a = ValueAnimator.ofFloat(shown, v.coerceIn(0f, 1f))
+        a.duration = UI.dur(450)
+        a.addUpdateListener {
+            shown = it.animatedValue as Float
+            invalidate()
+        }
+        va = a
+        a.start()
+    }
+
     override fun onDraw(canvas: Canvas) {
         val w = width.toFloat()
         val h = height.toFloat()
+        fill.color = UI.ACCENT
+        track.color = UI.DIM
+        val v = if (va?.isRunning == true) shown else value
         canvas.drawRoundRect(0f, 0f, w, h, h / 2f, h / 2f, track)
-        if (value > 0f) canvas.drawRoundRect(0f, 0f, max(w * value, h), h, h / 2f, h / 2f, fill)
+        if (v > 0f) canvas.drawRoundRect(0f, 0f, max(w * v, h), h, h / 2f, h / 2f, fill)
     }
 }
 
@@ -577,6 +657,8 @@ class LineChartView(context: Context) : View(context) {
             val y = padT + ch * i / 2f
             canvas.drawLine(0f, y, w, y, grid)
         }
+        line.color = UI.ACCENT
+        dotP.color = UI.ACCENT
         if (samples.isEmpty()) return
         var maxV = 60f
         for (v in samples) if (v * 1.25f > maxV) maxV = v * 1.25f
@@ -627,6 +709,270 @@ class LineChartView(context: Context) : View(context) {
             val y = padT + ch * (1f - (last / maxV).coerceIn(0f, 1f))
             canvas.drawCircle(x, y, dot * 2.4f, halo)
             canvas.drawCircle(x, y, dot, dotP)
+        }
+    }
+}
+
+
+/** Round gauge: bright ring (progress), dark gap ring, light disc with a number, an icon or a check. */
+class RingView(context: Context) : View(context) {
+    var progress: Float = 0f
+        set(v) {
+            field = v.coerceIn(0f, 1f)
+            invalidate()
+        }
+    var valueText: String = ""
+        set(v) {
+            field = v
+            invalidate()
+        }
+    var unitText: String = ""
+        set(v) {
+            field = v
+            invalidate()
+        }
+    var iconKind: Int = -1
+        set(v) {
+            field = v
+            iconPath = if (v >= 0) SvgPath.parse(Ic.PATHS[v]) else null
+            invalidate()
+        }
+    var check: Boolean = false
+        set(v) {
+            field = v
+            invalidate()
+        }
+    var dimmed: Boolean = false
+        set(v) {
+            field = v
+            invalidate()
+        }
+
+    private var iconPath: Path? = null
+    private var spinning = false
+    private var spinT = 0f
+    private var spinAnim: ValueAnimator? = null
+    private var moveAnim: ValueAnimator? = null
+    private val tickPath = SvgPath.parse("M5.5 12.5 L10 17 L18.5 7.5")
+    private val ring = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeCap = Paint.Cap.ROUND
+    }
+    private val fill = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val big = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        typeface = UI.bold()
+        textAlign = Paint.Align.CENTER
+        color = Color.parseColor("#0B0B0C")
+    }
+    private val small = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        textAlign = Paint.Align.CENTER
+        color = Color.parseColor("#6B6B72")
+    }
+    private val rect = RectF()
+
+    fun animateTo(p: Float, ms: Long = 900) {
+        moveAnim?.cancel()
+        val a = ValueAnimator.ofFloat(progress, p.coerceIn(0f, 1f))
+        a.duration = UI.dur(ms)
+        a.interpolator = android.view.animation.DecelerateInterpolator(1.8f)
+        a.addUpdateListener { progress = it.animatedValue as Float }
+        moveAnim = a
+        a.start()
+    }
+
+    fun setSpinning(on: Boolean) {
+        spinning = on
+        updateSpin()
+    }
+
+    private fun updateSpin() {
+        if (spinning && isAttachedToWindow) {
+            if (spinAnim == null) {
+                val a = ValueAnimator.ofFloat(0f, 1f)
+                a.duration = 1300
+                a.repeatCount = ValueAnimator.INFINITE
+                a.interpolator = LinearInterpolator()
+                a.addUpdateListener {
+                    spinT = it.animatedValue as Float
+                    invalidate()
+                }
+                spinAnim = a
+                a.start()
+            }
+        } else {
+            spinAnim?.cancel()
+            spinAnim = null
+            invalidate()
+        }
+    }
+
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        updateSpin()
+    }
+
+    override fun onDetachedFromWindow() {
+        spinAnim?.cancel()
+        spinAnim = null
+        moveAnim?.cancel()
+        super.onDetachedFromWindow()
+    }
+
+    override fun onDraw(canvas: Canvas) {
+        val w = width.toFloat()
+        val h = height.toFloat()
+        if (w <= 0f || h <= 0f) return
+        val s = min(w, h)
+        val cx = w / 2f
+        val cy = h / 2f
+        val stroke = s * 0.075f
+        val r = s / 2f - stroke / 2f - s * 0.012f
+
+        ring.strokeWidth = stroke
+        ring.color = if (dimmed) UI.DIM else UI.blend(UI.DIM, UI.BG, 0.25f)
+        canvas.drawCircle(cx, cy, r, ring)
+        ring.color = if (dimmed) UI.blend(UI.ACCENT, UI.BG, 0.6f) else UI.ACCENT
+        rect.set(cx - r, cy - r, cx + r, cy + r)
+        if (spinning) {
+            canvas.drawArc(rect, spinT * 360f - 90f, 110f, false, ring)
+        } else if (progress > 0.001f) {
+            canvas.drawArc(rect, -86f, 352f * progress, false, ring)
+        }
+
+        // dark separator ring, then the light disc
+        ring.strokeWidth = s * 0.05f
+        ring.color = UI.BG
+        val r2 = r - stroke * 1.05f
+        canvas.drawCircle(cx, cy, r2, ring)
+        val r3 = r2 - s * 0.03f
+        fill.color = if (dimmed) UI.blend(UI.discColor(), UI.BG, 0.45f) else UI.discColor()
+        canvas.drawCircle(cx, cy, r3, fill)
+
+        val ink = Color.parseColor("#0B0B0C")
+        if (check) {
+            drawGlyph(canvas, tickPath, cx, cy, r3 * 1.05f, ink)
+        } else if (iconPath != null) {
+            drawGlyph(canvas, iconPath!!, cx, cy, r3 * 1.05f, ink)
+        } else if (valueText.isNotEmpty()) {
+            var size = s * 0.29f
+            big.textSize = size
+            val maxW = r3 * 1.7f
+            while (big.measureText(valueText) > maxW && size > s * 0.08f) {
+                size -= s * 0.01f
+                big.textSize = size
+            }
+            small.textSize = s * 0.075f
+            val hasUnit = unitText.isNotEmpty()
+            val baseY = if (hasUnit) cy + size * 0.28f else cy + size * 0.36f
+            canvas.drawText(valueText, cx, baseY, big)
+            if (hasUnit) canvas.drawText(unitText, cx, baseY + s * 0.115f, small)
+        }
+    }
+
+    private fun drawGlyph(canvas: Canvas, p: Path, cx: Float, cy: Float, size: Float, color: Int) {
+        val sc = size * 0.9f / 24f
+        canvas.save()
+        canvas.translate(cx - 12f * sc, cy - 12f * sc)
+        canvas.scale(sc, sc)
+        ring.style = Paint.Style.STROKE
+        ring.strokeWidth = 1.9f
+        ring.color = color
+        canvas.drawPath(p, ring)
+        canvas.restore()
+    }
+}
+
+/** Small progress indicator for task rows: idle ring, spinner, check or warning. */
+class StatusView(context: Context) : View(context) {
+    companion object {
+        const val IDLE = 0
+        const val RUNNING = 1
+        const val DONE = 2
+        const val WARN = 3
+    }
+
+    private var st = IDLE
+    private var t = 0f
+    private var anim: ValueAnimator? = null
+    private val p = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeCap = Paint.Cap.ROUND
+        strokeJoin = Paint.Join.ROUND
+    }
+    private val tick = SvgPath.parse("M5.5 12.5 L10 17 L18.5 7.5")
+    private val bang = SvgPath.parse("M12 6 V13.5 M12 17.5 V17.6")
+
+    fun setState(s: Int) {
+        if (s == st) return
+        st = s
+        if (s == DONE || s == WARN) {
+            scaleX = 0.6f
+            scaleY = 0.6f
+            animate().scaleX(1f).scaleY(1f).setDuration(UI.dur(320)).setInterpolator(OvershootInterpolator(2.2f)).start()
+        }
+        updateAnim()
+        invalidate()
+    }
+
+    private fun updateAnim() {
+        if (st == RUNNING && isAttachedToWindow) {
+            if (anim == null) {
+                val a = ValueAnimator.ofFloat(0f, 1f)
+                a.duration = 900
+                a.repeatCount = ValueAnimator.INFINITE
+                a.interpolator = LinearInterpolator()
+                a.addUpdateListener {
+                    t = it.animatedValue as Float
+                    invalidate()
+                }
+                anim = a
+                a.start()
+            }
+        } else {
+            anim?.cancel()
+            anim = null
+        }
+    }
+
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        updateAnim()
+    }
+
+    override fun onDetachedFromWindow() {
+        anim?.cancel()
+        anim = null
+        super.onDetachedFromWindow()
+    }
+
+    override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+        setMeasuredDimension(UI.dp(context, 30), UI.dp(context, 30))
+    }
+
+    override fun onDraw(canvas: Canvas) {
+        val w = width.toFloat()
+        val cx = w / 2f
+        val r = w * 0.36f
+        p.strokeWidth = w * 0.09f
+        when (st) {
+            IDLE -> {
+                p.color = UI.DIM
+                canvas.drawCircle(cx, cx, r, p)
+            }
+            RUNNING -> {
+                p.color = UI.DIM
+                canvas.drawCircle(cx, cx, r, p)
+                p.color = UI.TEXT
+                canvas.drawArc(cx - r, cx - r, cx + r, cx + r, t * 360f - 90f, 95f, false, p)
+            }
+            else -> {
+                canvas.save()
+                canvas.scale(w / 24f, w / 24f)
+                p.strokeWidth = 2.1f
+                p.color = if (st == DONE) UI.TEXT else UI.MUTED
+                canvas.drawPath(if (st == DONE) tick else bang, p)
+                canvas.restore()
+            }
         }
     }
 }

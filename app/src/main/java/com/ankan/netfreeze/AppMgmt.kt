@@ -37,7 +37,7 @@ class AppMgmtScreen(ctx: Context, nav: Nav, private val startTab: Int) : Screen(
         val qa = LinearLayout(ctx)
         qa.orientation = LinearLayout.HORIZONTAL
         qa.addView(quick(Ic.DOWNLOAD, "App updates", "Check") { openStore() }, UI.lp(0, UI.WRAP, 1f))
-        qa.addView(quick(Ic.SPARKLE, "Clean up junk files", "Clean up") { nav.push(CleanupScreen(ctx, nav)) }, UI.lp(0, UI.WRAP, 1f))
+        qa.addView(quick(Ic.SPARKLE, "Clean up junk files", "Clean up") { nav.push(CleanupScreen(ctx, nav, false)) }, UI.lp(0, UI.WRAP, 1f))
         qa.addView(quick(Ic.TRASH, "Uninstall apps", "Uninstall") { nav.push(UninstallScreen(ctx, nav)) }, UI.lp(0, UI.WRAP, 1f))
         qa.addView(quick(Ic.BOX, "APKs", "View") { nav.push(FileListScreen(ctx, nav, 1)) }, UI.lp(0, UI.WRAP, 1f))
         page.add(qa, UI.lp(UI.MATCH, UI.WRAP, 0f, 0, UI.dp(ctx, 6), 0, 0))
@@ -323,7 +323,7 @@ class AppMgmtScreen(ctx: Context, nav: Nav, private val startTab: Int) : Screen(
         host.addView(card)
         val c = UI.card(ctx)
         val rows = arrayOf(
-            Pair("Temperature", String.format(java.util.Locale.US, "%.1f °C", b.tempC)),
+            Pair("Temperature", Sys.fmtTemp(ctx, b.tempC)),
             Pair("Voltage", String.format(java.util.Locale.US, "%.2f V", b.voltageV)),
             Pair("Health", b.health),
             Pair("Technology", b.tech)

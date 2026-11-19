@@ -1,6 +1,8 @@
 package com.ankan.netfreeze
 
 import android.Manifest
+import android.animation.ArgbEvaluator
+import android.animation.ValueAnimator
 import android.app.Activity
 import android.content.Intent
 import android.graphics.Color
@@ -13,6 +15,7 @@ import android.os.Looper
 import android.provider.Settings
 import android.view.Gravity
 import android.view.View
+import android.view.animation.DecelerateInterpolator
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -25,12 +28,13 @@ class MainActivity : Activity(), Nav {
     private val handler = Handler(Looper.getMainLooper())
 
     private val stack = ArrayList<Screen>()
+    private val tabs = ArrayList<Screen>()
     private lateinit var host: FrameLayout
-    private lateinit var navBar: LinearLayout
-    private lateinit var home: HomeScreen
-    private lateinit var utilities: UtilitiesScreen
+    private lateinit var navBar: FrameLayout
+    private lateinit var indicator: View
     private val navIcons = ArrayList<IconView>()
     private val navLabels = ArrayList<TextView>()
+    private var itemW = 0
     private var tab = 0
     private var resumed = false
     private var reapplyPending = false
@@ -42,83 +46,166 @@ class MainActivity : Activity(), Nav {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        window.statusBarColor = Color.BLACK
-        window.navigationBarColor = Color.BLACK
+        UI.loadTheme(this)
+        window.statusBarColor = UI.BG
+        window.navigationBarColor = UI.BG
+        val reopen = Prefs.getInt(this, "reopen_tab", -1)
+        if (reopen in 0..4) tab = reopen
+        Prefs.remove(this, "reopen_tab")
 
         val root = FrameLayout(this)
-        root.setBackgroundColor(Color.BLACK)
+        root.setBackgroundColor(UI.BG)
         host = FrameLayout(this)
         root.addView(host, FrameLayout.LayoutParams(UI.MATCH, UI.MATCH))
 
-        home = HomeScreen(this, this)
-        utilities = UtilitiesScreen(this, this)
+        tabs.add(HomeScreen(this, this))
+        tabs.add(CleanupScreen(this, this, true))
+        tabs.add(SecurityScreen(this, this, true))
+        tabs.add(ToolsScreen(this, this))
+        tabs.add(SettingsScreen(this, this, true))
 
         navBar = buildNav()
-        val w = minOf(UI.dp(this, 300), resources.displayMetrics.widthPixels - UI.dp(this, 40))
-        val lp = FrameLayout.LayoutParams(w, UI.WRAP, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL)
-        lp.bottomMargin = UI.dp(this, 16)
+        val barW = minOf(UI.dp(this, 400), resources.displayMetrics.widthPixels - UI.dp(this, 24))
+        val lp = FrameLayout.LayoutParams(barW, UI.WRAP, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL)
+        lp.bottomMargin = UI.dp(this, 14)
         root.addView(navBar, lp)
         setContentView(root)
 
-        stack.add(home)
-        render()
+        stack.add(tabs[tab])
+        render(0)
         AppRepo.load(this) { }
     }
 
-    private fun buildNav(): LinearLayout {
-        val bar = LinearLayout(this)
-        bar.orientation = LinearLayout.HORIZONTAL
-        bar.background = UI.rounded(this, Color.parseColor("#141416"), 36f, UI.STROKE, 1f)
-        bar.setPadding(UI.dp(this, 8), UI.dp(this, 8), UI.dp(this, 8), UI.dp(this, 8))
-        val names = arrayOf("Home", "Utilities")
-        val icons = intArrayOf(Ic.SHIELD, Ic.GRID)
+    private fun buildNav(): FrameLayout {
+        val names = arrayOf("Home", "Clean", "Security", "Tools", "Settings")
+        val icons = intArrayOf(Ic.HOME, Ic.SPARKLE, Ic.SHIELD, Ic.GRID, Ic.SLIDERS)
+        val barW = minOf(UI.dp(this, 400), resources.displayMetrics.widthPixels - UI.dp(this, 24))
+        val pad = UI.dp(this, 6)
+        itemW = (barW - 2 * pad) / names.size
+        val itemH = UI.dp(this, 60)
+
+        val bar = FrameLayout(this)
+        bar.background = UI.rounded(this, UI.blend(UI.BG, Color.WHITE, 0.07f), 36f, UI.STROKE, 1f)
+        bar.elevation = UI.dpf(this, 8f)
+
+        indicator = View(this)
+        indicator.background = UI.rounded(this, UI.blend(UI.BG, Color.WHITE, 0.15f), 28f)
+        val ilp = FrameLayout.LayoutParams(itemW, itemH)
+        ilp.leftMargin = pad
+        ilp.topMargin = pad
+        bar.addView(indicator, ilp)
+
+        val row = LinearLayout(this)
+        row.orientation = LinearLayout.HORIZONTAL
         for (i in names.indices) {
             val item = LinearLayout(this)
             item.orientation = LinearLayout.VERTICAL
             item.gravity = Gravity.CENTER
-            item.setPadding(0, UI.dp(this, 8), 0, UI.dp(this, 8))
             item.isClickable = true
-            item.setOnClickListener { selectTab(i) }
+            item.setOnClickListener {
+                UI.tap(it)
+                selectTab(i)
+            }
             val ic = IconView(this, icons[i])
-            item.addView(ic, UI.lp(UI.dp(this, 26), UI.dp(this, 26)))
-            val label = UI.text(this, names[i], 12.5f, UI.MUTED, UI.medium())
+            item.addView(ic, UI.lp(UI.dp(this, 24), UI.dp(this, 24)))
+            val label = UI.text(this, names[i], 11f, UI.MUTED, UI.medium())
             label.gravity = Gravity.CENTER
             item.addView(label, UI.lp(UI.WRAP, UI.WRAP, 0f, 0, UI.dp(this, 4), 0, 0))
-            bar.addView(item, UI.lp(0, UI.WRAP, 1f))
+            row.addView(item, UI.lp(0, UI.MATCH, 1f))
             navIcons.add(ic)
             navLabels.add(label)
         }
+        val rlp = FrameLayout.LayoutParams(barW - 2 * pad, itemH)
+        rlp.leftMargin = pad
+        rlp.topMargin = pad
+        bar.addView(row, rlp)
         return bar
     }
 
     private fun top(): Screen = stack[stack.size - 1]
 
-    private fun render() {
-        val showUtil = Prefs.getBool(this, "show_utilities", true)
-        if (!showUtil && tab == 1 && stack.size == 1) {
-            tab = 0
-            stack[0] = home
+    private fun tintTo(i: Int, to: Int, animate: Boolean) {
+        val ic = navIcons[i]
+        val lbl = navLabels[i]
+        val from = ic.tint
+        if (!animate || !UI.anim) {
+            ic.tint = to
+            lbl.setTextColor(to)
+            return
         }
-        val t = top()
-        host.removeAllViews()
-        host.addView(t.view, FrameLayout.LayoutParams(UI.MATCH, UI.MATCH))
-        t.view.alpha = 0f
-        t.view.animate().alpha(1f).setDuration(150).start()
-        navBar.visibility = if (stack.size == 1 && showUtil) View.VISIBLE else View.GONE
+        val a = ValueAnimator.ofObject(ArgbEvaluator(), from, to)
+        a.duration = 240
+        a.addUpdateListener {
+            val c = it.animatedValue as Int
+            ic.tint = c
+            lbl.setTextColor(c)
+        }
+        a.start()
+    }
+
+    private fun applyNav(animate: Boolean) {
         for (k in navIcons.indices) {
             val on = k == tab
-            navIcons[k].tint = if (on) Color.WHITE else UI.MUTED
-            navLabels[k].setTextColor(if (on) Color.WHITE else UI.MUTED)
+            tintTo(k, if (on) UI.ACCENT else UI.MUTED, animate)
+            if (on && animate && UI.anim) {
+                navIcons[k].animate().scaleX(1.22f).scaleY(1.22f).setDuration(130).withEndAction {
+                    navIcons[k].animate().scaleX(1f).scaleY(1f).setDuration(200).start()
+                }.start()
+            }
         }
+        val target = (tab * itemW).toFloat()
+        if (animate && UI.anim) {
+            indicator.animate().translationX(target).setDuration(300).setInterpolator(DecelerateInterpolator(1.8f)).start()
+        } else {
+            indicator.translationX = target
+        }
+    }
+
+    private fun render(dir: Int) {
+        val t = top()
+        val v = t.view
+        host.removeAllViews()
+        host.addView(v, FrameLayout.LayoutParams(UI.MATCH, UI.MATCH))
+        v.animate().cancel()
+        if (UI.anim) {
+            v.alpha = 0f
+            v.translationX = dir * UI.dpf(this, 56f)
+            v.animate().alpha(1f).translationX(0f).setDuration(300).setInterpolator(DecelerateInterpolator(1.7f)).start()
+        } else {
+            v.alpha = 1f
+            v.translationX = 0f
+        }
+        if (dir >= 0) UI.stagger(v)
+
+        val showBar = stack.size == 1
+        if (showBar && navBar.visibility != View.VISIBLE) {
+            navBar.visibility = View.VISIBLE
+            if (UI.anim) {
+                navBar.translationY = UI.dpf(this, 90f)
+                navBar.animate().translationY(0f).setDuration(320).setInterpolator(DecelerateInterpolator(1.6f)).start()
+            }
+        } else if (!showBar && navBar.visibility == View.VISIBLE) {
+            if (UI.anim) {
+                navBar.animate().translationY(UI.dpf(this, 90f)).setDuration(220).withEndAction { navBar.visibility = View.GONE }.start()
+            } else {
+                navBar.visibility = View.GONE
+            }
+        }
+        applyNav(false)
         if (resumed) t.onShow()
     }
 
     private fun selectTab(i: Int) {
-        if (stack.size != 1 || i == tab) return
+        if (i == tab) return
+        if (stack.size > 1) {
+            while (stack.size > 1) stack.removeAt(stack.size - 1)
+        }
         if (resumed) top().onHide()
+        val dir = if (i > tab) 1 else -1
         tab = i
-        stack[0] = if (i == 0) home else utilities
-        render()
+        stack[0] = tabs[i]
+        render(dir)
+        applyNav(true)
     }
 
     override fun onResume() {
@@ -139,7 +226,13 @@ class MainActivity : Activity(), Nav {
 
     @Deprecated("Deprecated in Java")
     override fun onBackPressed() {
-        if (stack.size > 1) pop() else super.onBackPressed()
+        if (stack.size > 1) {
+            pop()
+        } else if (tab != 0) {
+            selectTab(0)
+        } else {
+            super.onBackPressed()
+        }
     }
 
     // ------------------------------------------------------------------ Nav
@@ -147,15 +240,24 @@ class MainActivity : Activity(), Nav {
     override fun push(s: Screen) {
         if (resumed) top().onHide()
         stack.add(s)
-        render()
+        render(1)
     }
 
     override fun pop() {
         if (stack.size > 1) {
             if (resumed) top().onHide()
             stack.removeAt(stack.size - 1)
-            render()
+            render(-1)
         }
+    }
+
+    override fun openTab(i: Int) {
+        if (i in 0..4) selectTab(i)
+    }
+
+    override fun restartUi() {
+        Prefs.putInt(this, "reopen_tab", tab)
+        recreate()
     }
 
     override fun toast(msg: String) {
@@ -181,9 +283,7 @@ class MainActivity : Activity(), Nav {
     override fun openAllFiles() {
         if (Build.VERSION.SDK_INT >= 30) {
             try {
-                startActivity(
-                    Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, Uri.parse("package:$packageName"))
-                )
+                startActivity(Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, Uri.parse("package:$packageName")))
             } catch (e: Exception) {
                 try {
                     startActivity(Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION))
@@ -197,10 +297,7 @@ class MainActivity : Activity(), Nav {
     }
 
     override fun requestStorage() {
-        requestPermissions(
-            arrayOf(Manifest.permission.WRITE_EXTERNAL_STORAGE, Manifest.permission.READ_EXTERNAL_STORAGE),
-            reqStorage
-        )
+        requestPermissions(arrayOf(Manifest.permission.WRITE_EXTERNAL_STORAGE, Manifest.permission.READ_EXTERNAL_STORAGE), reqStorage)
     }
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {

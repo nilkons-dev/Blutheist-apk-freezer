@@ -47,4 +47,22 @@ object Prefs {
         val trimmed = list.take(20)
         sp(ctx).edit().putString("records", trimmed.joinToString("\n")).apply()
     }
+
+    fun getString(ctx: Context, key: String, def: String): String = sp(ctx).getString(key, def) ?: def
+    fun putString(ctx: Context, key: String, v: String) {
+        sp(ctx).edit().putString(key, v).apply()
+    }
+
+    fun getSet(ctx: Context, key: String): Set<String> = sp(ctx).getStringSet(key, emptySet())?.toSet() ?: emptySet()
+    fun putSet(ctx: Context, key: String, v: Set<String>) {
+        sp(ctx).edit().putStringSet(key, HashSet(v)).apply()
+    }
+
+    fun remove(ctx: Context, key: String) {
+        sp(ctx).edit().remove(key).apply()
+    }
+
+    fun clearAll(ctx: Context) {
+        sp(ctx).edit().clear().apply()
+    }
 }
