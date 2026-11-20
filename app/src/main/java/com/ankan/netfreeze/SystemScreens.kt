@@ -1,6 +1,5 @@
 package com.ankan.netfreeze
 
-import android.app.AlertDialog
 import android.app.usage.UsageStatsManager
 import android.content.Context
 import android.content.Intent
@@ -714,30 +713,25 @@ class SecurityScreen(ctx: Context, nav: Nav, private val isTab: Boolean) : Scree
             labels.add("Delete file")
         }
         labels.add("Ignore this item")
-        AlertDialog.Builder(ctx)
-            .setTitle(t.title)
-            .setMessage(t.detail)
-            .setItems(labels.toTypedArray()) { _, which ->
-                val pick = labels[which]
-                when (pick) {
-                    "Open app settings" -> openAppSettings(nav, t.pkg ?: "")
-                    "Uninstall" -> nav.launch(Intent(Intent.ACTION_DELETE, Uri.parse("package:" + t.pkg)))
-                    "Delete file" -> {
-                        val ok = try { File(t.path ?: "").delete() } catch (e: Exception) { false }
-                        nav.toast(if (ok) "File deleted" else "Could not delete the file")
-                        if (ok) {
-                            report?.threats?.remove(t)
-                            buildDone()
-                        }
-                    }
-                    else -> {
-                        Prefs.putSet(ctx, "ignored_threats", ignored() + key)
-                        nav.toast("Ignored")
+        Sheet.actions(ctx, t.title, t.detail, labels) { which ->
+            val pick = labels[which]
+            when (pick) {
+                "Open app settings" -> openAppSettings(nav, t.pkg ?: "")
+                "Uninstall" -> nav.launch(Intent(Intent.ACTION_DELETE, Uri.parse("package:" + t.pkg)))
+                "Delete file" -> {
+                    val ok = try { File(t.path ?: "").delete() } catch (e: Exception) { false }
+                    nav.toast(if (ok) "File deleted" else "Could not delete the file")
+                    if (ok) {
+                        report?.threats?.remove(t)
                         buildDone()
                     }
                 }
+                else -> {
+                    Prefs.putSet(ctx, "ignored_threats", ignored() + key)
+                    nav.toast("Ignored")
+                    buildDone()
+                }
             }
-            .setNegativeButton("Close", null)
-            .show()
+        }
     }
 }

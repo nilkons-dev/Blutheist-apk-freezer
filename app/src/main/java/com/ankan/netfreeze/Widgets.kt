@@ -12,6 +12,7 @@ import android.graphics.PathMeasure
 import android.graphics.PointF
 import android.graphics.RectF
 import android.graphics.Shader
+import android.graphics.SweepGradient
 import android.view.View
 import android.view.animation.LinearInterpolator
 import android.view.animation.OvershootInterpolator
@@ -521,17 +522,18 @@ class SegBar(context: Context) : View(context) {
     }
 }
 
-/** Vertical bars with a letter box underneath (screen time). */
+/** Vertical bars with a letter box underneath (screen time). Bars rise from the bottom one after another. */
 class BarsView(context: Context) : View(context) {
     private var bars: List<Pair<Float, String>> = emptyList()
-    private val track = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#1E1E22") }
+    private var t = 0f
+    private var anim: ValueAnimator? = null
+    private val track = Paint(Paint.ANTI_ALIAS_FLAG)
     private val fill = Paint(Paint.ANTI_ALIAS_FLAG)
     private val boxP = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
-        color = Color.parseColor("#2E2E33")
         strokeWidth = UI.dpf(context, 1f)
     }
-    private val boxF = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#17171A") }
+    private val boxF = Paint(Paint.ANTI_ALIAS_FLAG)
     private val txt = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.WHITE
         textAlign = Paint.Align.CENTER
@@ -541,7 +543,26 @@ class BarsView(context: Context) : View(context) {
 
     fun setBars(list: List<Pair<Float, String>>) {
         bars = list
-        invalidate()
+        anim?.cancel()
+        if (list.isEmpty() || !UI.anim) {
+            t = 1f
+            invalidate()
+            return
+        }
+        t = 0f
+        val a = ValueAnimator.ofFloat(0f, 1f)
+        a.duration = 1100
+        a.addUpdateListener {
+            t = it.animatedValue as Float
+            invalidate()
+        }
+        anim = a
+        a.start()
+    }
+
+    override fun onDetachedFromWindow() {
+        anim?.cancel()
+        super.onDetachedFromWindow()
     }
 
     override fun onDraw(canvas: Canvas) {
@@ -553,18 +574,23 @@ class BarsView(context: Context) : View(context) {
         val col = w / bars.size
         val bw = min(col * 0.55f, UI.dpf(context, 40f))
         val rad = bw / 2f
+        track.color = UI.CARD2
+        boxP.color = UI.STROKE
+        boxF.color = UI.CARD
         fill.shader = LinearGradient(0f, 0f, 0f, barArea, UI.ACCENT, UI.blend(UI.ACCENT, Color.BLACK, 0.3f), Shader.TileMode.CLAMP)
+        val n = bars.size
         for (i in bars.indices) {
             val cx = col * i + col / 2f
             canvas.drawRoundRect(cx - bw / 2f, 0f, cx + bw / 2f, barArea, rad, rad, track)
-            val f = bars[i].first.coerceIn(0f, 1f)
-            if (f > 0f) {
-                val fh = max(f * barArea, bw)
+            val raw = (t * (1f + 0.3f * (n - 1)) - 0.3f * i).coerceIn(0f, 1f)
+            val e = 1f - (1f - raw) * (1f - raw) * (1f - raw)
+            val f = bars[i].first.coerceIn(0f, 1f) * e
+            if (f > 0.002f) {
+                val fh = max(f * barArea, min(bw, barArea * e))
                 canvas.drawRoundRect(cx - bw / 2f, barArea - fh, cx + bw / 2f, barArea, rad, rad, fill)
             }
-            val bx = labelH
             val top = h - labelH
-            val r = RectF(cx - bx / 2f, top, cx + bx / 2f, h)
+            val r = RectF(cx - labelH / 2f, top, cx + labelH / 2f, h)
             canvas.drawRoundRect(r, UI.dpf(context, 9f), UI.dpf(context, 9f), boxF)
             canvas.drawRoundRect(r, UI.dpf(context, 9f), UI.dpf(context, 9f), boxP)
             canvas.drawText(bars[i].second, cx, top + labelH / 2f + txt.textSize * 0.35f, txt)
@@ -573,22 +599,25 @@ class BarsView(context: Context) : View(context) {
 }
 
 class ThinProgress(context: Context) : View(context) {
-    private val track = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#26262A") }
-    private val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE }
-
-    var value: Float = 0f
-        set(v) {
-            field = v.coerceIn(0f, 1f)
-            invalidate()
-        }
-
+    private val track = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val fill = Paint(Paint.ANTI_ALIAS_FLAG)
     private var shown = 0f
     private var va: ValueAnimator? = null
 
-    fun animateTo(v: Float) {
+    var value: Float
+        get() = shown
+        set(v) {
+            va?.cancel()
+            shown = v.coerceIn(0f, 1f)
+            invalidate()
+        }
+
+    /** Fills smoothly from the current value to [v]. */
+    fun animateTo(v: Float, ms: Long = 800) {
         va?.cancel()
         val a = ValueAnimator.ofFloat(shown, v.coerceIn(0f, 1f))
-        a.duration = UI.dur(450)
+        a.duration = UI.dur(ms)
+        a.interpolator = android.view.animation.DecelerateInterpolator(1.8f)
         a.addUpdateListener {
             shown = it.animatedValue as Float
             invalidate()
@@ -597,14 +626,18 @@ class ThinProgress(context: Context) : View(context) {
         a.start()
     }
 
+    override fun onDetachedFromWindow() {
+        va?.cancel()
+        super.onDetachedFromWindow()
+    }
+
     override fun onDraw(canvas: Canvas) {
         val w = width.toFloat()
         val h = height.toFloat()
         fill.color = UI.ACCENT
         track.color = UI.DIM
-        val v = if (va?.isRunning == true) shown else value
         canvas.drawRoundRect(0f, 0f, w, h, h / 2f, h / 2f, track)
-        if (v > 0f) canvas.drawRoundRect(0f, 0f, max(w * v, h), h, h / 2f, h / 2f, fill)
+        if (shown > 0.001f) canvas.drawRoundRect(0f, 0f, max(w * shown, h), h, h / 2f, h / 2f, fill)
     }
 }
 
@@ -829,14 +862,26 @@ class RingView(context: Context) : View(context) {
         val r = s / 2f - stroke / 2f - s * 0.012f
 
         ring.strokeWidth = stroke
-        ring.color = if (dimmed) UI.DIM else UI.blend(UI.DIM, UI.BG, 0.25f)
+        ring.shader = null
+        ring.color = if (dimmed) UI.DIM else UI.blend(UI.DIM, UI.BG, 0.2f)
         canvas.drawCircle(cx, cy, r, ring)
-        ring.color = if (dimmed) UI.blend(UI.ACCENT, UI.BG, 0.6f) else UI.ACCENT
+        val accent = if (dimmed) UI.blend(UI.ACCENT, UI.BG, 0.6f) else UI.ACCENT
         rect.set(cx - r, cy - r, cx + r, cy + r)
         if (spinning) {
-            canvas.drawArc(rect, spinT * 360f - 90f, 110f, false, ring)
-        } else if (progress > 0.001f) {
-            canvas.drawArc(rect, -86f, 352f * progress, false, ring)
+            // comet: the tail fades into the track, so the moving part blends in smoothly
+            val clear = Color.argb(0, Color.red(accent), Color.green(accent), Color.blue(accent))
+            ring.shader = SweepGradient(cx, cy, intArrayOf(clear, accent), floatArrayOf(0f, 0.34f))
+            canvas.save()
+            canvas.rotate(spinT * 360f, cx, cy)
+            canvas.drawArc(rect, 0f, 122f, false, ring)
+            canvas.restore()
+            ring.shader = null
+        } else if (progress >= 0.995f) {
+            ring.color = accent
+            canvas.drawCircle(cx, cy, r, ring)
+        } else if (progress > 0.002f) {
+            ring.color = accent
+            canvas.drawArc(rect, -90f, 360f * progress, false, ring)
         }
 
         // dark separator ring, then the light disc
@@ -962,8 +1007,13 @@ class StatusView(context: Context) : View(context) {
             RUNNING -> {
                 p.color = UI.DIM
                 canvas.drawCircle(cx, cx, r, p)
-                p.color = UI.TEXT
-                canvas.drawArc(cx - r, cx - r, cx + r, cx + r, t * 360f - 90f, 95f, false, p)
+                val clear = Color.argb(0, Color.red(UI.TEXT), Color.green(UI.TEXT), Color.blue(UI.TEXT))
+                p.shader = SweepGradient(cx, cx, intArrayOf(clear, UI.TEXT), floatArrayOf(0f, 0.3f))
+                canvas.save()
+                canvas.rotate(t * 360f, cx, cx)
+                canvas.drawArc(cx - r, cx - r, cx + r, cx + r, 0f, 108f, false, p)
+                canvas.restore()
+                p.shader = null
             }
             else -> {
                 canvas.save()

@@ -1,7 +1,7 @@
 package com.ankan.netfreeze
 
-import android.app.AlertDialog
 import android.content.Context
+import android.graphics.Color
 import android.view.View
 import android.widget.LinearLayout
 
@@ -20,12 +20,12 @@ class SettingsScreen(ctx: Context, nav: Nav, private val isTab: Boolean) : Scree
 
         // appearance
         val a = section("Appearance")
-        choiceRow(a, Ic.SUN, "Theme", "theme", UI.THEME_NAMES, 0) {
+        choiceRow(a, Ic.SUN, "Theme", "theme", UI.THEME_NAMES, 0, intArrayOf(Color.BLACK, Color.parseColor("#28282C"), Color.parseColor("#151E33"))) {
             UI.loadTheme(ctx)
             nav.restartUi()
         }
         divider(a)
-        choiceRow(a, Ic.SPARKLE, "Accent colour", "accent", UI.ACCENT_NAMES, 0) {
+        choiceRow(a, Ic.SPARKLE, "Accent colour", "accent", UI.ACCENT_NAMES, 0, UI.ACCENTS) {
             UI.loadTheme(ctx)
             nav.restartUi()
         }
@@ -36,11 +36,11 @@ class SettingsScreen(ctx: Context, nav: Nav, private val isTab: Boolean) : Scree
 
         // scanning & cleaning
         val b = section("Scanning and cleaning")
-        choiceRow(b, Ic.SHIELD, "Virus scan depth", "scan_depth", arrayOf("Quick (device and apps)", "Full (also every file)"), 1) { }
+        choiceRow(b, Ic.SHIELD, "Virus scan depth", "scan_depth", arrayOf("Quick (device and apps)", "Full (also every file)"), 1, null) { }
         divider(b)
         toggleRow(b, Ic.TRASH, "Confirm before deleting", "confirm_delete", true, null)
         divider(b)
-        choiceRow(b, Ic.BATTERY, "Temperature unit", "temp_unit", arrayOf("Celsius (°C)", "Fahrenheit (°F)"), 0) { }
+        choiceRow(b, Ic.BATTERY, "Temperature unit", "temp_unit", arrayOf("Celsius (°C)", "Fahrenheit (°F)"), 0, null) { }
 
         // permissions
         val c = section("Permissions")
@@ -65,26 +65,17 @@ class SettingsScreen(ctx: Context, nav: Nav, private val isTab: Boolean) : Scree
         }.root)
         divider(d)
         d.addView(UI.row(ctx, Ic.HOURGLASS, "Reset all settings", "", true) {
-            AlertDialog.Builder(ctx)
-                .setTitle("Reset all settings?")
-                .setMessage("Theme, accent, App Lock PIN, locked apps and frozen-app choices go back to default.")
-                .setPositiveButton("Reset") { _, _ ->
-                    Prefs.clearAll(ctx)
-                    UI.loadTheme(ctx)
-                    nav.restartUi()
-                }
-                .setNegativeButton("Cancel", null)
-                .show()
+            Sheet.confirm(ctx, "Reset all settings?", "Theme, accent, App Lock PIN, locked apps and frozen-app choices go back to default.", "Reset") {
+                Prefs.clearAll(ctx)
+                UI.loadTheme(ctx)
+                nav.restartUi()
+            }
         }.root)
 
         // about
         val e = section("About")
-        e.addView(UI.row(ctx, Ic.INFO, "Blutheist Phone Manager", "v3.1", true) {
-            AlertDialog.Builder(ctx)
-                .setTitle("Blutheist Phone Manager")
-                .setMessage("Version 3.1\n\nStorage cleanup, system boost, virus and risk scan, App Lock, app management, Net Freeze, speed test, duplicate finder and more.\n\nEverything runs on your phone. Nothing is uploaded.")
-                .setPositiveButton("OK", null)
-                .show()
+        e.addView(UI.row(ctx, Ic.INFO, "Blutheist Phone Manager", "v3.2", true) {
+            Sheet.info(ctx, "Blutheist Phone Manager", "Version 3.2\n\nStorage cleanup, system boost, virus and risk scan, App Lock, app management, Net Freeze, speed test, duplicate finder and more.\n\nEverything runs on your phone. Nothing is uploaded.")
         }.root)
     }
 
@@ -116,22 +107,20 @@ class SettingsScreen(ctx: Context, nav: Nav, private val isTab: Boolean) : Scree
         card.addView(r.root)
     }
 
-    private fun choiceRow(card: LinearLayout, icon: Int, title: String, key: String, options: Array<String>, def: Int, onChange: () -> Unit) {
+    private fun choiceRow(
+        card: LinearLayout, icon: Int, title: String, key: String, options: Array<String>, def: Int,
+        swatches: IntArray?, onChange: () -> Unit
+    ) {
         val cur = Prefs.getInt(ctx, key, def).coerceIn(0, options.size - 1)
         val r = UI.row(ctx, icon, title, options[cur], true) { }
         r.root.setOnClickListener {
             UI.tap(it)
             val now = Prefs.getInt(ctx, key, def).coerceIn(0, options.size - 1)
-            AlertDialog.Builder(ctx)
-                .setTitle(title)
-                .setSingleChoiceItems(options, now) { dlg, which ->
-                    Prefs.putInt(ctx, key, which)
-                    r.value.text = options[which]
-                    dlg.dismiss()
-                    onChange()
-                }
-                .setNegativeButton("Cancel", null)
-                .show()
+            Sheet.choose(ctx, title, options, now, swatches) { which ->
+                Prefs.putInt(ctx, key, which)
+                UI.swapText(r.value, options[which])
+                onChange()
+            }
         }
         card.addView(r.root)
     }

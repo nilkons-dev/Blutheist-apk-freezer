@@ -2,7 +2,6 @@ package com.ankan.netfreeze
 
 import android.accessibilityservice.AccessibilityService
 import android.app.Activity
-import android.app.AlertDialog
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.DialogInterface
@@ -135,12 +134,9 @@ class AppLockService : AccessibilityService() {
 /** Full-screen PIN pad shown over a locked app. */
 class LockActivity : Activity() {
     private var pkg = ""
-    private val pin = StringBuilder()
-    private val dotViews = ArrayList<View>()
-    private lateinit var dots: LinearLayout
-    private lateinit var msg: TextView
-    private var len = 4
     private var label = ""
+    private lateinit var msg: TextView
+    private lateinit var pad: PinPad
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -149,7 +145,6 @@ class LockActivity : Activity() {
         window.statusBarColor = UI.BG
         window.navigationBarColor = UI.BG
         pkg = intent.getStringExtra("pkg") ?: ""
-        len = AppLockStore.length(this)
         label = appLabel(this, pkg)
 
         val root = LinearLayout(this)
@@ -169,84 +164,24 @@ class LockActivity : Activity() {
         msg = UI.text(this, "Enter your PIN to open this app", 15f, UI.MUTED)
         root.addView(msg, UI.lp(UI.WRAP, UI.WRAP, 0f, 0, UI.dp(this, 8), 0, 0))
 
-        dots = LinearLayout(this)
-        dots.orientation = LinearLayout.HORIZONTAL
-        for (i in 0 until len) {
-            val d = View(this)
-            d.background = UI.rounded(this, UI.DIM, 8f)
-            dotViews.add(d)
-            dots.addView(d, UI.lp(UI.dp(this, 14), UI.dp(this, 14), 0f, UI.dp(this, 8), 0, UI.dp(this, 8), 0))
-        }
-        root.addView(dots, UI.lp(UI.WRAP, UI.WRAP, 0f, 0, UI.dp(this, 30), 0, UI.dp(this, 26)))
-
-        val keys = arrayOf("1", "2", "3", "4", "5", "6", "7", "8", "9", "bio", "0", "del")
-        for (r in 0 until 4) {
-            val row = LinearLayout(this)
-            row.orientation = LinearLayout.HORIZONTAL
-            for (c in 0 until 3) {
-                val k = keys[r * 3 + c]
-                row.addView(keyView(k), UI.lp(UI.dp(this, 76), UI.dp(this, 76), 0f, UI.dp(this, 10), UI.dp(this, 8), UI.dp(this, 10), UI.dp(this, 8)))
-            }
-            root.addView(row)
-        }
+        val bio = Prefs.getBool(this, "lock_bio", false) && Build.VERSION.SDK_INT >= 28
+        pad = PinPad(this, AppLockStore.length(this), bio, { entered -> verify(entered) }, { startBio() })
+        root.addView(pad, UI.lp(UI.WRAP, UI.WRAP, 0f, 0, UI.dp(this, 34), 0, 0))
         setContentView(root)
-        if (Prefs.getBool(this, "lock_bio", false)) startBio()
+        if (UI.anim) {
+            pad.alpha = 0f
+            pad.translationY = UI.dpf(this, 30f)
+            pad.animate().alpha(1f).translationY(0f).setDuration(380).start()
+        }
+        if (bio) startBio()
     }
 
-    private fun keyView(k: String): View {
-        val f = FrameLayout(this)
-        if (k == "bio" && !(Prefs.getBool(this, "lock_bio", false) && Build.VERSION.SDK_INT >= 28)) return f
-        f.background = UI.rounded(this, UI.CARD2, 38f, UI.STROKE, 1f)
-        f.isClickable = true
-        when (k) {
-            "del" -> f.addView(IconView(this, Ic.BACKSPACE), FrameLayout.LayoutParams(UI.dp(this, 28), UI.dp(this, 28), Gravity.CENTER))
-            "bio" -> f.addView(IconView(this, Ic.LOCK), FrameLayout.LayoutParams(UI.dp(this, 28), UI.dp(this, 28), Gravity.CENTER))
-            else -> {
-                val t = UI.text(this, k, 28f, UI.TEXT, UI.medium())
-                f.addView(t, FrameLayout.LayoutParams(UI.WRAP, UI.WRAP, Gravity.CENTER))
-            }
-        }
-        f.setOnClickListener {
-            UI.tap(it)
-            when (k) {
-                "del" -> if (pin.isNotEmpty()) {
-                    pin.deleteCharAt(pin.length - 1)
-                    refreshDots()
-                }
-                "bio" -> startBio()
-                else -> if (pin.length < len) {
-                    pin.append(k)
-                    refreshDots()
-                    if (pin.length == len) verify()
-                }
-            }
-        }
-        UI.press(f, 0.9f)
-        return f
-    }
-
-    private fun refreshDots() {
-        for (i in dotViews.indices) {
-            val on = i < pin.length
-            dotViews[i].background = UI.rounded(this, if (on) UI.ACCENT else UI.DIM, 8f)
-            if (on && i == pin.length - 1 && UI.anim) {
-                dotViews[i].scaleX = 0.4f
-                dotViews[i].scaleY = 0.4f
-                dotViews[i].animate().scaleX(1f).scaleY(1f).setDuration(180).start()
-            }
-        }
-    }
-
-    private fun verify() {
-        if (AppLockStore.check(this, pin.toString())) {
+    private fun verify(entered: String) {
+        if (AppLockStore.check(this, entered)) {
             success()
         } else {
             msg.text = "Wrong PIN. Try again"
-            if (UI.anim) {
-                android.animation.ObjectAnimator.ofFloat(dots, "translationX", 0f, 26f, -26f, 18f, -18f, 8f, 0f).setDuration(380).start()
-            }
-            pin.setLength(0)
-            dots.postDelayed({ refreshDots() }, 380)
+            pad.shake()
         }
     }
 
@@ -284,10 +219,6 @@ class LockActivity : Activity() {
         h.flags = Intent.FLAG_ACTIVITY_NEW_TASK
         startActivity(h)
         finish()
-    }
-
-    override fun onUserLeaveHint() {
-        super.onUserLeaveHint()
     }
 }
 
@@ -345,36 +276,10 @@ class AppLockScreen(ctx: Context, nav: Nav) : Screen(ctx, nav) {
     }
 
     private fun pinDialog(after: (() -> Unit)?) {
-        val box = LinearLayout(ctx)
-        box.orientation = LinearLayout.VERTICAL
-        box.setPadding(UI.dp(ctx, 24), UI.dp(ctx, 12), UI.dp(ctx, 24), 0)
-        val e1 = EditText(ctx)
-        e1.hint = "New PIN (4 to 6 digits)"
-        e1.inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_VARIATION_PASSWORD
-        val e2 = EditText(ctx)
-        e2.hint = "Repeat PIN"
-        e2.inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_VARIATION_PASSWORD
-        box.addView(e1)
-        box.addView(e2)
-        AlertDialog.Builder(ctx)
-            .setTitle(if (AppLockStore.hasPin(ctx)) "Change PIN" else "Set a PIN")
-            .setView(box)
-            .setPositiveButton("Save") { _, _ ->
-                val a = e1.text.toString()
-                val b = e2.text.toString()
-                when {
-                    a.length < 4 || a.length > 6 -> nav.toast("PIN must be 4 to 6 digits")
-                    a != b -> nav.toast("PINs do not match")
-                    else -> {
-                        AppLockStore.setPin(ctx, a)
-                        nav.toast("PIN saved")
-                        buildStatus()
-                        if (after != null) after()
-                    }
-                }
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
+        nav.push(PinSetupScreen(ctx, nav) {
+            buildStatus()
+            if (after != null) after()
+        })
     }
 
     private fun buildStatus() {

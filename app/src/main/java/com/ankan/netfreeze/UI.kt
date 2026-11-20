@@ -1,8 +1,19 @@
 package com.ankan.netfreeze
 
+import android.animation.ObjectAnimator
+import android.animation.PropertyValuesHolder
 import android.content.Context
+import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.ColorFilter
+import android.graphics.LinearGradient
+import android.graphics.Paint
+import android.graphics.PixelFormat
+import android.graphics.RadialGradient
+import android.graphics.Rect
+import android.graphics.Shader
 import android.graphics.Typeface
+import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.StateListDrawable
 import android.view.Gravity
@@ -89,17 +100,8 @@ object UI {
         return d
     }
 
-    /** Soft light from the top, fading into the background. */
-    fun glow(ctx: Context): GradientDrawable {
-        val g = GradientDrawable(
-            GradientDrawable.Orientation.TOP_BOTTOM,
-            intArrayOf(blend(BG, Color.WHITE, 0.10f), blend(BG, Color.WHITE, 0.025f), BG)
-        )
-        g.gradientType = GradientDrawable.RADIAL_GRADIENT
-        g.setGradientCenter(0.5f, 0.08f)
-        g.gradientRadius = dpf(ctx, 480f)
-        return g
-    }
+    /** Soft light from the top that fades into the background exactly where the status bar is. */
+    fun glow(ctx: Context): Drawable = GlowDrawable(ctx)
 
     fun text(ctx: Context, s: String, sp: Float, color: Int, face: Typeface = regular()): TextView {
         val t = TextView(ctx)
@@ -121,18 +123,12 @@ object UI {
         if (tv.text.toString() != s) tv.text = s
     }
 
-    /** Smooth text swap: fade out, change, fade in. */
+    /** Changes the text and plays a soft fade. It never cancels other animations of the view. */
     fun swapText(tv: TextView, s: String) {
         if (tv.text.toString() == s) return
-        if (!anim) {
-            tv.text = s
-            return
-        }
-        tv.animate().cancel()
-        tv.animate().alpha(0f).setDuration(110).withEndAction {
-            tv.text = s
-            tv.animate().alpha(1f).setDuration(200).start()
-        }.start()
+        tv.text = s
+        if (!anim) return
+        ObjectAnimator.ofFloat(tv, View.ALPHA, 0.2f, 1f).setDuration(320).start()
     }
 
     /** Press feedback: the view shrinks slightly while touched. Does not block clicks. */
@@ -157,10 +153,18 @@ object UI {
         val list = scrollContent(root) ?: return
         for (i in 0 until list.childCount) {
             val c = list.getChildAt(i)
+            val dist = 28f * c.resources.displayMetrics.density
             c.alpha = 0f
-            c.translationY = 28f * c.resources.displayMetrics.density
-            c.animate().alpha(1f).translationY(0f).setStartDelay(i * 55L).setDuration(420)
-                .setInterpolator(DecelerateInterpolator(1.6f)).start()
+            c.translationY = dist
+            val a = ObjectAnimator.ofPropertyValuesHolder(
+                c,
+                PropertyValuesHolder.ofFloat(View.ALPHA, 0f, 1f),
+                PropertyValuesHolder.ofFloat(View.TRANSLATION_Y, dist, 0f)
+            )
+            a.startDelay = i * 55L
+            a.duration = 420
+            a.interpolator = DecelerateInterpolator(1.6f)
+            a.start()
         }
     }
 
@@ -274,4 +278,39 @@ object UI {
         t.setPadding(dp(ctx, 6), 0, 0, 0)
         return t
     }
+}
+
+
+/** Background: a radial glow plus a top fade, so the status bar and the page look like one surface. */
+class GlowDrawable(private val ctx: Context) : Drawable() {
+    private val glowPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val fadePaint = Paint()
+
+    override fun onBoundsChange(bounds: Rect) {
+        super.onBoundsChange(bounds)
+        val w = bounds.width().toFloat()
+        val h = bounds.height().toFloat()
+        glowPaint.shader = RadialGradient(
+            w / 2f, h * 0.15f, UI.dpf(ctx, 470f),
+            UI.blend(UI.BG, Color.WHITE, 0.11f), UI.BG, Shader.TileMode.CLAMP
+        )
+        val clear = Color.argb(0, Color.red(UI.BG), Color.green(UI.BG), Color.blue(UI.BG))
+        fadePaint.shader = LinearGradient(
+            0f, 0f, 0f, UI.dpf(ctx, 170f),
+            intArrayOf(UI.BG, UI.BG, clear), floatArrayOf(0f, 0.17f, 1f), Shader.TileMode.CLAMP
+        )
+    }
+
+    override fun draw(canvas: Canvas) {
+        val b = bounds
+        canvas.drawColor(UI.BG)
+        canvas.drawRect(b.left.toFloat(), b.top.toFloat(), b.right.toFloat(), b.bottom.toFloat(), glowPaint)
+        canvas.drawRect(b.left.toFloat(), b.top.toFloat(), b.right.toFloat(), b.top + UI.dpf(ctx, 170f), fadePaint)
+    }
+
+    override fun setAlpha(alpha: Int) {}
+    override fun setColorFilter(colorFilter: ColorFilter?) {}
+
+    @Suppress("OVERRIDE_DEPRECATION")
+    override fun getOpacity(): Int = PixelFormat.OPAQUE
 }

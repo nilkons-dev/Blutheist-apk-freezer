@@ -244,14 +244,18 @@ class HomeScreen(ctx: Context, nav: Nav) : Screen(ctx, nav) {
             else -> "$risk item(s) to review"
         }
         mRam.value.text = Sys.fmtBytes(memUsed) + " of " + Sys.fmtBytes(m.total)
-        mRam.bar.animateTo(memUsed.toFloat() / m.total.coerceAtLeast(1L))
+        if (animate) mRam.bar.value = 0f
+        mRam.bar.animateTo(memUsed.toFloat() / m.total.coerceAtLeast(1L), 900)
         mStorage.value.text = Sys.fmtBytes(usedS) + " of " + Sys.fmtBytes(st.total)
-        mStorage.bar.animateTo(usedS.toFloat() / st.total.coerceAtLeast(1L))
+        if (animate) mStorage.bar.value = 0f
+        mStorage.bar.animateTo(usedS.toFloat() / st.total.coerceAtLeast(1L), 1000)
         val b = Sys.battery(ctx)
         mBattery.value.text = b.level.toString() + "% · " + b.statusText
-        mBattery.bar.animateTo(b.level / 100f)
+        if (animate) mBattery.bar.value = 0f
+        mBattery.bar.animateTo(b.level / 100f, 1100)
         mTemp.value.text = Sys.fmtTemp(ctx, b.tempC)
-        mTemp.bar.animateTo((b.tempC.toFloat() / 60f))
+        if (animate) mTemp.bar.value = 0f
+        mTemp.bar.animateTo((b.tempC.toFloat() / 60f), 1200)
         buildActivity()
 
         val score = Sys.score(ctx)
@@ -394,11 +398,7 @@ class OptimizeScreen(ctx: Context, nav: Nav) : Screen(ctx, nav) {
                         ui { steps[0].subTv.text = "Scanning storage… $n files" }
                     }
                     if (!cancel.get()) {
-                        freedStorage += Cleaner.delete(r.junk)
-                        Cleaner.deleteEmptyDirs(r.emptyDirs)
-                        r.junk.clear()
-                        r.emptyDirs.clear()
-                        r.junkBytes = 0L
+                        freedStorage += Cleaner.deleteJunk(r)
                         Cleaner.last = r
                     }
                 }

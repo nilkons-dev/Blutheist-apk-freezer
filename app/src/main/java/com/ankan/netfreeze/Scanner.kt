@@ -223,9 +223,9 @@ object Scanner {
     }
 
     private fun severityFor(points: Int): Int = when {
-        points >= 7 -> 3
-        points >= 4 -> 2
-        points >= 3 -> 1
+        points >= 8 -> 3
+        points >= 5 -> 2
+        points >= 4 -> 1
         else -> 0
     }
 
@@ -270,7 +270,8 @@ object Scanner {
             if (pkg in nlEnabled && !trusted(pkg)) {
                 pts += 2; reasons.add("Notification access is turned on")
             }
-            if (!isSystem) {
+            val storeInstalled = try { pm.getInstallerPackageName(pkg) in STORES } catch (e: Exception) { false }
+            if (!isSystem && !(trusted(pkg) && storeInstalled)) {
                 val pi: PackageInfo? = try {
                     val f = PackageManager.GET_PERMISSIONS or PackageManager.GET_SERVICES or PackageManager.GET_RECEIVERS or
                         (if (Build.VERSION.SDK_INT >= 28) PackageManager.GET_SIGNING_CERTIFICATES else 0)

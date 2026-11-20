@@ -42,6 +42,8 @@ class Page(
     val content = LinearLayout(ctx)
     val titleView: TextView
     private val floating = FrameLayout(ctx)
+    private val tabPage: Boolean = !back
+    private val scrolls: Boolean = scroll
 
     init {
         root.background = UI.glow(ctx)
@@ -87,14 +89,18 @@ class Page(
         root.addView(floating, FrameLayout.LayoutParams(UI.MATCH, UI.WRAP, Gravity.BOTTOM))
     }
 
-    /** Puts a pill button at the bottom centre (null removes it). */
+    /** Puts a pill button at the bottom centre (null removes it). On tab pages it sits above the tab bar. */
     fun setBottom(btn: View?) {
         floating.removeAllViews()
         if (btn != null) {
             val w = minOf(UI.dp(ctx, 300), ctx.resources.displayMetrics.widthPixels - UI.dp(ctx, 56))
             val p = FrameLayout.LayoutParams(w, UI.WRAP, Gravity.CENTER_HORIZONTAL)
-            p.bottomMargin = UI.dp(ctx, 28)
+            p.bottomMargin = UI.dp(ctx, 28) + (if (tabPage) UI.dp(ctx, 90) else 0)
             floating.addView(btn, p)
+        }
+        if (scrolls) {
+            val bottom = if (btn != null) (if (tabPage) 230 else 150) else (if (tabPage) 120 else 130)
+            content.setPadding(content.paddingLeft, content.paddingTop, content.paddingRight, UI.dp(ctx, bottom))
         }
     }
 

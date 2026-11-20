@@ -1,6 +1,5 @@
 package com.ankan.netfreeze
 
-import android.app.AlertDialog
 import android.content.Context
 import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
@@ -618,11 +617,8 @@ class PrivacyScreen(ctx: Context, nav: Nav) : Screen(ctx, nav) {
             nav.toast("No apps use " + g.title.lowercase())
             return
         }
-        val names = g.apps.map { it.second }.toTypedArray()
-        AlertDialog.Builder(ctx)
-            .setTitle(g.title + " access")
-            .setItems(names) { _, which -> openAppSettings(nav, g.apps[which].first) }
-            .setNegativeButton("Close", null)
-            .show()
+        Sheet.actions(ctx, g.title + " access", "Tap an app to change what it can use.", g.apps.map { it.second }) { which ->
+            openAppSettings(nav, g.apps[which].first)
+        }
     }
 }

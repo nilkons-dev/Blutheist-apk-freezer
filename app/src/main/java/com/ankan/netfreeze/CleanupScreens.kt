@@ -1,6 +1,5 @@
 package com.ankan.netfreeze
 
-import android.app.AlertDialog
 import android.content.Context
 import android.graphics.Color
 import android.os.Handler
@@ -195,35 +194,16 @@ class CleanupScreen(ctx: Context, nav: Nav, private val isTab: Boolean) : Screen
                 subTv.text = Sys.fmtBytes(f1) + " freed so far"
                 progressBar.animateTo(0.2f)
             }
-            // 2. junk files, a few at a time
+            // 2. junk files, a few at a time; 3. empty folders
             if (r != null) {
-                val total = r.junk.size.coerceAtLeast(1)
-                var done = 0
-                for (e in r.junk.toList()) {
-                    try {
-                        if (e.file.delete()) freed += e.size
-                    } catch (ex: Exception) {
-                        // ignore
+                val base = freed
+                freed += Cleaner.deleteJunk(r) { done, total, f ->
+                    val p = 0.2f + 0.7f * done / total
+                    main.post {
+                        subTv.text = Sys.fmtBytes(base + f) + " freed · " + done + " of " + total + " files"
+                        progressBar.animateTo(p, 300)
+                        ring.progress = p
                     }
-                    done++
-                    if (done % 25 == 0 || done == r.junk.size) {
-                        val fNow = freed
-                        val p = 0.2f + 0.7f * done / total
-                        main.post {
-                            subTv.text = Sys.fmtBytes(fNow) + " freed · " + done + " of " + total + " files"
-                            progressBar.animateTo(p)
-                            ring.progress = p
-                        }
-                    }
-                }
-                // 3. empty folders
-                Cleaner.deleteEmptyDirs(r.emptyDirs)
-                r.junk.clear()
-                r.emptyDirs.clear()
-                r.junkBytes = 0L
-                for (i in 0 until 4) {
-                    r.catBytes[i] = 0L
-                    r.catCount[i] = 0
                 }
             }
             val total = freed
@@ -448,12 +428,7 @@ class FileListScreen(ctx: Context, nav: Nav, private val kind: Int) : Screen(ctx
             doDelete(sel)
             return
         }
-        AlertDialog.Builder(ctx)
-            .setTitle("Delete files?")
-            .setMessage(sel.size.toString() + " file(s), " + Sys.fmtBytes(sel.sumOf { it.size }) + ", will be permanently deleted.")
-            .setPositiveButton("Delete") { _, _ -> doDelete(sel) }
-            .setNegativeButton("Cancel", null)
-            .show()
+        Sheet.confirm(ctx, "Delete files?", sel.size.toString() + " file(s), " + Sys.fmtBytes(sel.sumOf { it.size }) + ", will be permanently deleted.", "Delete") { doDelete(sel) }
     }
 
     private fun doDelete(sel: List<FileEntry>) {
@@ -557,10 +532,7 @@ class AppMediaScreen(ctx: Context, nav: Nav, private val app: Int) : Screen(ctx,
     private fun confirm() {
         val sel = dirs.filter { it.selected }
         if (sel.isEmpty()) return
-        AlertDialog.Builder(ctx)
-            .setTitle("Delete media?")
-            .setMessage(Sys.fmtBytes(sel.sumOf { it.size }) + " of files will be permanently deleted from this phone.")
-            .setPositiveButton("Delete") { _, _ ->
+        Sheet.confirm(ctx, "Delete media?", Sys.fmtBytes(sel.sumOf { it.size }) + " of files will be permanently deleted from this phone.", "Delete") {
                 Thread {
                     var freed = 0L
                     for (d in sel) freed += Cleaner.clearDir(d.dir)
@@ -575,8 +547,6 @@ class AppMediaScreen(ctx: Context, nav: Nav, private val app: Int) : Screen(ctx,
                         Prefs.addRecord(ctx.applicationContext, if (app == 0) "WhatsApp cleaner" else "Telegram cleaner", Sys.fmtBytes(freed) + " cleared")
                     }
                 }.start()
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
+        }
     }
 }

@@ -234,6 +234,39 @@ object Cleaner {
         return freed
     }
 
+    /** Deletes all junk files of a scan; whatever could not be deleted stays listed. Returns freed bytes. */
+    fun deleteJunk(r: ScanResult, onStep: ((Int, Int, Long) -> Unit)? = null): Long {
+        var freed = 0L
+        var done = 0
+        val total = r.junk.size.coerceAtLeast(1)
+        val keep = ArrayList<FileEntry>()
+        for (e in r.junk.toList()) {
+            val gone = try {
+                e.file.delete() || !e.file.exists()
+            } catch (ex: Exception) {
+                false
+            }
+            if (gone) freed += e.size else keep.add(e)
+            done++
+            if (onStep != null && (done % 25 == 0 || done == total)) onStep(done, total, freed)
+        }
+        deleteEmptyDirs(r.emptyDirs)
+        r.emptyDirs.removeAll { !it.exists() }
+        r.junk.clear()
+        r.junk.addAll(keep)
+        r.junkBytes = 0L
+        for (i in 0 until 4) {
+            r.catBytes[i] = 0L
+            r.catCount[i] = 0
+        }
+        for (e in keep) {
+            r.junkBytes += e.size
+            r.catBytes[e.cat] += e.size
+            r.catCount[e.cat]++
+        }
+        return freed
+    }
+
     fun deleteEmptyDirs(dirs: List<File>) {
         for (d in dirs) {
             try {

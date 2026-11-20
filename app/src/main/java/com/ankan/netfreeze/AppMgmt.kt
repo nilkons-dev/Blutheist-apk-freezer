@@ -318,7 +318,7 @@ class AppMgmtScreen(ctx: Context, nav: Nav, private val startTab: Int) : Screen(
         card.addView(UI.text(ctx, b.level.toString() + "%", 44f, UI.TEXT, UI.bold()), UI.lp(UI.WRAP, UI.WRAP, 0f, 0, UI.dp(ctx, 8), 0, 0))
         card.addView(UI.text(ctx, b.statusText + " · " + b.source, 14f, UI.MUTED), UI.lp(UI.WRAP, UI.WRAP, 0f, 0, UI.dp(ctx, 6), 0, UI.dp(ctx, 16)))
         val bar = ThinProgress(ctx)
-        bar.value = b.level / 100f
+        bar.animateTo(b.level / 100f, 1000)
         card.addView(bar, UI.lp(UI.MATCH, UI.dp(ctx, 8)))
         host.addView(card)
         val c = UI.card(ctx)

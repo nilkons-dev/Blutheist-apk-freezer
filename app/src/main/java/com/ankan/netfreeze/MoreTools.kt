@@ -1,6 +1,5 @@
 package com.ankan.netfreeze
 
-import android.app.AlertDialog
 import android.app.usage.UsageStatsManager
 import android.content.Context
 import android.content.Intent
@@ -194,12 +193,7 @@ class DuplicatesScreen(ctx: Context, nav: Nav) : Screen(ctx, nav) {
             go()
             return
         }
-        AlertDialog.Builder(ctx)
-            .setTitle("Delete duplicates?")
-            .setMessage(sel.size.toString() + " file(s), " + Sys.fmtBytes(sel.sumOf { it.e.size }) + ". The oldest copy of each file is kept.")
-            .setPositiveButton("Delete") { _, _ -> go() }
-            .setNegativeButton("Cancel", null)
-            .show()
+        Sheet.confirm(ctx, "Delete duplicates?", sel.size.toString() + " file(s), " + Sys.fmtBytes(sel.sumOf { it.e.size }) + ". The oldest copy of each file is kept.", "Delete") { go() }
     }
 }
 
@@ -226,10 +220,15 @@ class StorageScreen(ctx: Context, nav: Nav, private val dir: File) : Screen(ctx,
             val n = nodes[pos]
             row.showIcon(if (n.file.isDirectory) Ic.FOLDER else Ic.FILE)
             row.title.text = n.file.name
-            val pct = (n.size * 100 / total.coerceAtLeast(1L)).toInt()
-            row.sub.text = pct.toString() + "% of this folder"
             row.rtext.visibility = View.VISIBLE
-            row.rtext.text = Sys.fmtBytes(n.size)
+            if (n.size < 0L) {
+                row.sub.text = "Calculating…"
+                row.rtext.text = "…"
+            } else {
+                val pct = (n.size * 100 / total.coerceAtLeast(1L)).toInt()
+                row.sub.text = pct.toString() + "% of this folder"
+                row.rtext.text = Sys.fmtBytes(n.size)
+            }
             row.chev.visibility = if (n.file.isDirectory) View.VISIBLE else View.GONE
         }
         list.adapter = adapter
@@ -260,21 +259,44 @@ class StorageScreen(ctx: Context, nav: Nav, private val dir: File) : Screen(ctx,
         load()
     }
 
+    private var loadToken = 0
+
     private fun load() {
+        loadToken += 1
+        val my = loadToken
+        totalTv.text = "Reading folders…"
         Thread {
             val kids: Array<File> = try { dir.listFiles() ?: emptyArray<File>() } catch (e: Exception) { emptyArray<File>() }
             val out = ArrayList<Node>()
+            for (k in kids) out.add(Node(k, -1L))
+            main.post {
+                if (my != loadToken) return@post
+                nodes.clear()
+                nodes.addAll(out)
+                total = 1L
+                adapter.notifyDataSetChanged()
+                totalTv.text = "Calculating… 0 of " + out.size
+            }
             var sum = 0L
-            for (k in kids) {
-                val s = Cleaner.dirSize(k)
-                sum += s
-                out.add(Node(k, s))
+            for (idx in out.indices) {
+                if (my != loadToken) return@Thread
+                val n = out[idx]
+                n.size = Cleaner.dirSize(n.file)
+                sum += n.size
+                val soFar = sum
+                main.post {
+                    if (my != loadToken) return@post
+                    total = soFar.coerceAtLeast(1L)
+                    adapter.notifyDataSetChanged()
+                    totalTv.text = "Calculating… " + (idx + 1) + " of " + out.size + " · " + Sys.fmtBytes(soFar)
+                }
             }
             out.sortByDescending { it.size }
             main.post {
+                if (my != loadToken) return@post
                 nodes.clear()
                 nodes.addAll(out)
-                total = sum
+                total = sum.coerceAtLeast(1L)
                 adapter.notifyDataSetChanged()
                 totalTv.text = Sys.fmtBytes(sum) + " in " + out.size + " items"
                 loaded = true
@@ -283,10 +305,7 @@ class StorageScreen(ctx: Context, nav: Nav, private val dir: File) : Screen(ctx,
     }
 
     private fun askDelete(n: Node) {
-        AlertDialog.Builder(ctx)
-            .setTitle("Delete " + n.file.name + "?")
-            .setMessage(Sys.fmtBytes(n.size) + " will be permanently deleted.")
-            .setPositiveButton("Delete") { _, _ ->
+        Sheet.confirm(ctx, "Delete " + n.file.name + "?", Sys.fmtBytes(n.size) + " will be permanently deleted.", "Delete") {
                 Thread {
                     val ok = try { n.file.deleteRecursively() } catch (e: Exception) { false }
                     main.post {
@@ -294,9 +313,7 @@ class StorageScreen(ctx: Context, nav: Nav, private val dir: File) : Screen(ctx,
                         if (ok) load()
                     }
                 }.start()
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
+        }
     }
 }
 
